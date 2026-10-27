@@ -8,13 +8,15 @@ import pandas as pd
 import shap
 
 from beverage_demand.config import processed, results
+from beverage_demand.db import table
 from beverage_demand.viz import plots
 from beverage_demand.viz.plots import plt
 
-LABELS = {"lightgbm": "LightGBM", "regression": "Log-log regression",
+LABELS = {"lightgbm": "LightGBM", "hist_gbm": "HistGradientBoosting", "regression": "Log-log regression",
           "seasonal_naive": "Seasonal naive", "moving_avg_4": "4-week moving average"}
 MODEL_COLORS = {"lightgbm": plots.CATEGORICAL[0], "regression": plots.CATEGORICAL[1],
-                "seasonal_naive": plots.CATEGORICAL[2], "moving_avg_4": plots.CATEGORICAL[3]}
+                "seasonal_naive": plots.CATEGORICAL[2], "moving_avg_4": plots.CATEGORICAL[3],
+                "hist_gbm": plots.CATEGORICAL[6]}
 
 FEATURE_NAMES = {
     "ln_price": "own price (log)", "discount": "discount depth", "rmean_13": "13-wk avg sales",
@@ -66,16 +68,16 @@ def plot_wape_by_series(m: pd.DataFrame) -> None:
 
 def plot_promo_split(m: pd.DataFrame) -> None:
     d = m[m["slice"] == "promo"].pivot(index="model", columns="group", values="wape")
-    order = ["lightgbm", "regression", "seasonal_naive", "moving_avg_4"]
+    order = ["lightgbm", "hist_gbm", "regression", "seasonal_naive", "moving_avg_4"]
     d = d.reindex(order)
     fig, ax = plt.subplots(figsize=(8, 4.2))
     x = np.arange(2)
-    w = 0.2
+    w = 0.16
     for i, mdl in enumerate(order):
         vals = d.loc[mdl, ["non-promo weeks", "promo weeks"]].to_numpy(float)
-        ax.bar(x + (i - 1.5) * w, vals, width=w * 0.92, color=MODEL_COLORS[mdl], label=LABELS[mdl],
+        ax.bar(x + (i - 2) * w, vals, width=w * 0.92, color=MODEL_COLORS[mdl], label=LABELS[mdl],
                edgecolor=plots.SURFACE, linewidth=1.5)
-        for xi, v in zip(x + (i - 1.5) * w, vals, strict=True):
+        for xi, v in zip(x + (i - 2) * w, vals, strict=True):
             ax.text(xi, min(v, 1.95) + 0.03, f"{v:.0%}", ha="center", fontsize=8)
     ax.set_xticks(x, ["Non-promo weeks", "Promo weeks"])
     ax.set_ylim(0, 2.1)
@@ -89,7 +91,7 @@ def plot_promo_split(m: pd.DataFrame) -> None:
 
 def plot_shap() -> list[tuple[str, float]]:
     model = lgb.Booster(model_file=str(processed("lightgbm_last_fold").with_suffix(".txt")))
-    X = pd.read_parquet(processed("shap_sample"))
+    X = table("shap_sample")
     sv = shap.TreeExplainer(model).shap_values(X)
     Xn = X.rename(columns=FEATURE_NAMES)
     plt.figure()
@@ -105,7 +107,7 @@ def plot_shap() -> list[tuple[str, float]]:
 def plot_horizon(m: pd.DataFrame) -> None:
     d = m[m["slice"] == "horizon"].pivot(index="group", columns="model", values="wape")
     fig, ax = plt.subplots(figsize=(7, 3.8))
-    for mdl in ["lightgbm", "regression", "seasonal_naive"]:
+    for mdl in ["lightgbm", "hist_gbm", "regression", "seasonal_naive"]:
         ax.plot(d.index.astype(int), d[mdl], marker="o", color=MODEL_COLORS[mdl], label=LABELS[mdl])
     ax.set_xlabel("Weeks ahead")
     ax.set_ylabel("WAPE")
@@ -116,7 +118,11 @@ def plot_horizon(m: pd.DataFrame) -> None:
 
 
 def run() -> dict:
-    pred = pd.read_parquet(processed("backtest_predictions"))
+    long = table("forecast_predictions")
+    pred = long.pivot_table(index=["series", "store", "week", "promo"], columns="model",
+                            values="forecast").reset_index()
+    pred = pred.merge(long[long["model"] == "lightgbm"][["series", "store", "week", "units"]],
+                      on=["series", "store", "week"])
     m = pd.read_csv(results("forecast_metrics.csv"))
     plot_actual_vs_forecast(pred, ["Pepsi | 24pk can", "Coke | 2L"])
     plot_wape_by_series(m)

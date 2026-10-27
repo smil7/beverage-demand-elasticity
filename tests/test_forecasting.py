@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from beverage_demand.forecasting.backtest import counterfactual
 from beverage_demand.forecasting.features import STORE_ATTRS, build_supervised
 from beverage_demand.forecasting.metrics import bias, mape, wape
+from beverage_demand.forecasting.models import counterfactual
 
 BRANDS = ["Coke", "Pepsi"]
 

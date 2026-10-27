@@ -9,7 +9,34 @@
     "last_week_end": "1997-05-07",
     "modelled_series_brand_pack": 12,
     "modelled_store_series": 1026,
-    "model_panel_rows": 381397
+    "model_panel_rows": 381397,
+    "warehouse_tables": 24
+  },
+  "modelling": {
+    "tuning_trials": 8,
+    "tuning_cv_folds": [
+      303,
+      311,
+      319
+    ],
+    "best_params": {
+      "tweedie_variance_power": 1.7,
+      "num_leaves": 127,
+      "min_data_in_leaf": 200
+    },
+    "best_cv_wape": 0.4689,
+    "worst_cv_wape": 0.516,
+    "boosting_rounds": 93,
+    "lightgbm_vs_hist_gbm_wape": [
+      0.4753,
+      0.4992
+    ],
+    "ablation_wape_increase": {
+      "sales history (lags, rolling stats)": 0.0163,
+      "price & promotion": 0.3678,
+      "calendar & holidays": -0.0015,
+      "store demographics": 0.0065
+    }
   },
   "elasticity": {
     "own_price_elasticity_min": -6.21,
@@ -32,52 +59,55 @@
     "horizon_weeks": 8,
     "test_weeks": "328-399",
     "overall": {
-      "wape_lightgbm": 0.4752,
+      "wape_lightgbm": 0.4753,
       "wape_seasonal_naive": 0.9083,
       "wape_moving_avg_4": 0.9764,
       "wape_regression": 0.5804,
+      "wape_hist_gbm": 0.4992,
       "best_baseline": "regression",
       "wape_best_baseline": 0.5804,
       "wape_improvement_vs_seasonal_naive_pct": 47.7,
       "wape_improvement_vs_best_baseline_pct": 18.1,
-      "mape_lightgbm": 1.0704,
+      "mape_lightgbm": 1.1626,
       "mape_seasonal_naive": 3.5697,
-      "mape_improvement_vs_seasonal_naive_pct": 70.0,
-      "bias_lightgbm": -0.0884,
+      "mape_improvement_vs_seasonal_naive_pct": 67.4,
+      "bias_lightgbm": -0.0755,
       "test_rows": 67199
     },
     "promo_weeks": {
-      "wape_lightgbm": 0.4852,
+      "wape_lightgbm": 0.4848,
       "wape_seasonal_naive": 0.7664,
       "wape_moving_avg_4": 0.7421,
       "wape_regression": 0.5978,
+      "wape_hist_gbm": 0.51,
       "best_baseline": "regression",
       "wape_best_baseline": 0.5978,
-      "wape_improvement_vs_seasonal_naive_pct": 36.7,
-      "wape_improvement_vs_best_baseline_pct": 18.8,
-      "mape_lightgbm": 1.3897,
+      "wape_improvement_vs_seasonal_naive_pct": 36.8,
+      "wape_improvement_vs_best_baseline_pct": 18.9,
+      "mape_lightgbm": 1.5164,
       "mape_seasonal_naive": 1.7895,
-      "mape_improvement_vs_seasonal_naive_pct": 22.3,
-      "bias_lightgbm": -0.0908,
+      "mape_improvement_vs_seasonal_naive_pct": 15.3,
+      "bias_lightgbm": -0.0783,
       "test_rows": 39378
     },
     "non_promo_weeks": {
-      "wape_lightgbm": 0.3997,
+      "wape_lightgbm": 0.4047,
       "wape_seasonal_naive": 1.9747,
       "wape_moving_avg_4": 2.737,
       "wape_regression": 0.4493,
+      "wape_hist_gbm": 0.4179,
       "best_baseline": "regression",
       "wape_best_baseline": 0.4493,
-      "wape_improvement_vs_seasonal_naive_pct": 79.8,
-      "wape_improvement_vs_best_baseline_pct": 11.0,
-      "mape_lightgbm": 0.6172,
+      "wape_improvement_vs_seasonal_naive_pct": 79.5,
+      "wape_improvement_vs_best_baseline_pct": 9.9,
+      "mape_lightgbm": 0.6604,
       "mape_seasonal_naive": 6.096,
-      "mape_improvement_vs_seasonal_naive_pct": 89.9,
-      "bias_lightgbm": -0.0701,
+      "mape_improvement_vs_seasonal_naive_pct": 89.2,
+      "bias_lightgbm": -0.054,
       "test_rows": 27821
     },
     "chain_level": {
-      "wape_lightgbm": 0.4256,
+      "wape_lightgbm": 0.4222,
       "wape_seasonal_naive": 0.881,
       "wape_regression": 0.5187
     },
@@ -92,67 +122,52 @@
   "promo": {
     "promo_store_weeks_analysed": 39378,
     "promo_events": 15523,
-    "avg_lift_pct": 556.3,
-    "avg_lift_pct_24pk_can": 1552.5,
-    "avg_lift_pct_2L": 379.1,
-    "overall_roi": 0.886,
+    "avg_lift_pct": 535.7,
+    "avg_lift_pct_24pk_can": 1452.3,
+    "avg_lift_pct_2L": 366.6,
+    "overall_roi": 0.882,
     "total_discount_investment_usd": 19556972.0,
-    "total_net_gross_margin_impact_usd": -2228643.0,
+    "total_net_gross_margin_impact_usd": -2306437.0,
     "promo_types_ranked": 103,
     "share_promo_types_roi_gt_1": 0.282,
     "best_promo_type": "Private Label 24pk can - Bonus buy (B), 0-10% off",
-    "best_promo_type_roi": 3.44,
+    "best_promo_type_roi": 3.24,
     "largest_margin_gain_promo_type": "Pepsi 24pk can - Simple price reduction (S), 10-20% off",
-    "largest_margin_gain_roi": 2.02,
-    "largest_margin_gain_usd": 969619.0,
+    "largest_margin_gain_roi": 2.01,
+    "largest_margin_gain_usd": 966392.0,
     "worst_promo_type": "Private Label 24pk can - Unflagged price cut (U), 20-30% off",
-    "worst_promo_type_roi": -2.51,
+    "worst_promo_type_roi": -2.67,
     "roi_by_depth": {
-      "24pk can 0-10%": 0.2,
+      "24pk can 0-10%": 0.14,
       "24pk can 10-20%": 1.3,
-      "24pk can 20-30%": 0.9,
+      "24pk can 20-30%": 0.89,
       "24pk can 30%+": 0.72,
-      "2L 0-10%": 1.08,
-      "2L 10-20%": 1.34,
-      "2L 20-30%": 1.23,
-      "2L 30%+": 0.82
+      "2L 0-10%": 0.93,
+      "2L 10-20%": 1.32,
+      "2L 20-30%": 1.22,
+      "2L 30%+": 0.81
     },
     "roi_10_20pct_discounts": {
       "24pk can": 1.3,
-      "2L": 1.34
+      "2L": 1.32
     },
     "roi_30pct_plus_discounts": {
       "24pk can": 0.72,
-      "2L": 0.82
+      "2L": 0.81
     },
     "share_of_discount_spend_on_30pct_plus": 0.663,
     "roi_by_type": {
-      "24pk can Bonus buy (B)": 0.86,
+      "24pk can Bonus buy (B)": 0.85,
       "24pk can Simple price reduction (S)": 0.94,
-      "24pk can Unflagged price cut (U)": 0.55,
-      "2L Bonus buy (B)": 0.92,
+      "24pk can Unflagged price cut (U)": 0.54,
+      "2L Bonus buy (B)": 0.91,
       "2L Simple price reduction (S)": 0.87,
-      "2L Undocumented code (G)": 0.89,
-      "2L Unflagged price cut (U)": 0.47
+      "2L Undocumented code (G)": 0.88,
+      "2L Unflagged price cut (U)": 0.44
     },
     "post_promo_dip_week1_median_pct": {
       "24pk can": -13.8,
       "2L": -0.7
     }
-  },
-  "price_optimisation": {
-    "example_series": "Coke | 2L",
-    "regular_price": 1.66,
-    "unit_cost": 0.98,
-    "elasticity": -3.49,
-    "optimal_price": 1.37,
-    "price_change_pct": -17.1,
-    "volume_change_pct": 92.4,
-    "margin_uplift_pct": 11.9,
-    "optimal_price_range_from_elasticity_ci": [
-      1.35,
-      1.4
-    ],
-    "assumptions": "constant elasticity, competitors do not react, unit cost fixed, +/-20% price bounds"
   }
 }

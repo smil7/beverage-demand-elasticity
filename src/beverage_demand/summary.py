@@ -6,7 +6,8 @@ import json
 
 import pandas as pd
 
-from beverage_demand.config import processed, results, settings
+from beverage_demand.config import results, settings
+from beverage_demand.db import connect
 
 
 def _r(x: float, n: int = 4) -> float:
@@ -14,10 +15,21 @@ def _r(x: float, n: int = 4) -> float:
 
 
 def build() -> dict:
-    counts = pd.read_parquet(processed("_ingest_counts")).iloc[0]
-    fact = pd.read_parquet(processed("fact_sales_weekly"), columns=["store", "week", "brand", "pack"])
-    panel = pd.read_parquet(processed("model_panel"), columns=["series", "store", "week"])
-    cal = pd.read_parquet(processed("dim_calendar"))
+    with connect(read_only=True) as con:
+        counts = con.execute(
+            "SELECT * FROM etl_run_log ORDER BY loaded_at DESC LIMIT 1").df().iloc[0]
+        facts = con.execute("""
+            SELECT COUNT(*) AS n, COUNT(DISTINCT store) AS stores, COUNT(DISTINCT week) AS weeks,
+                   MIN(c.week_start) AS first_day, MAX(c.week_end) AS last_day
+            FROM fact_sales_weekly f JOIN dim_calendar c USING (week)""").df().iloc[0]
+        panel = con.execute("""
+            SELECT COUNT(*) AS n, COUNT(DISTINCT series) AS series,
+                   COUNT(DISTINCT (series, store)) AS store_series FROM model_panel""").df().iloc[0]
+        tables = con.execute("""
+            SELECT table_name, estimated_size FROM duckdb_tables() ORDER BY table_name""").df()
+        events = con.execute("SELECT * FROM promo_events").df()
+        trials = con.execute("SELECT * FROM tuning_trials ORDER BY cv_wape").df()
+        ablation = con.execute("SELECT * FROM ablation_results").df()
 
     own = pd.read_csv(results("elasticities.csv"))
     cross = pd.read_csv(results("cross_elasticities.csv"))
@@ -27,21 +39,19 @@ def build() -> dict:
     by_pack_depth = pd.read_csv(results("promo_by_depth.csv"))
     ranking = pd.read_csv(results("promo_roi.csv"))
     by_type = pd.read_csv(results("promo_by_type.csv"))
-    events = pd.read_parquet(processed("fact_promo_events"))
-    opt = pd.read_csv(results("price_optimization.csv"))
 
-    wk = cal.set_index("week")
     data = {
         "raw_movement_rows": int(counts["raw_rows"]),
         "clean_movement_rows": int(counts["clean_rows"]),
-        "fact_rows_brand_pack_store_week": int(len(fact)),
-        "stores": int(fact["store"].nunique()),
-        "weeks_with_data": int(fact["week"].nunique()),
-        "first_week_start": str(wk.loc[fact["week"].min(), "week_start"].date()),
-        "last_week_end": str(wk.loc[fact["week"].max(), "week_end"].date()),
-        "modelled_series_brand_pack": int(panel["series"].nunique()),
-        "modelled_store_series": int(panel.groupby(["series", "store"]).ngroups),
-        "model_panel_rows": int(len(panel)),
+        "fact_rows_brand_pack_store_week": int(facts["n"]),
+        "stores": int(facts["stores"]),
+        "weeks_with_data": int(facts["weeks"]),
+        "first_week_start": str(pd.Timestamp(facts["first_day"]).date()),
+        "last_week_end": str(pd.Timestamp(facts["last_day"]).date()),
+        "modelled_series_brand_pack": int(panel["series"]),
+        "modelled_store_series": int(panel["store_series"]),
+        "model_panel_rows": int(panel["n"]),
+        "warehouse_tables": int(len(tables)),
     }
 
     ident = cross[cross["identified"]]
@@ -73,7 +83,7 @@ def build() -> dict:
         row = fm[(fm["slice"] == slice_) & (fm["group"] == group) & (fm["model"] == model)]
         return float(row[col].iloc[0])
 
-    baselines = ["seasonal_naive", "moving_avg_4", "regression"]
+    baselines = ["seasonal_naive", "moving_avg_4", "regression"]  # hist_gbm is reported separately
     fc = settings()["forecast"]
     forecast = {"backtest_folds": fc["n_folds"], "horizon_weeks": fc["horizon"],
                 "test_weeks": f"{fc['first_origin'] + 1}-{fc['first_origin'] + fc['n_folds'] * fc['fold_step']}"}
@@ -86,6 +96,7 @@ def build() -> dict:
             "wape_lightgbm": _r(lg), "wape_seasonal_naive": _r(sn),
             "wape_moving_avg_4": _r(w(sl, grp, "moving_avg_4")),
             "wape_regression": _r(w(sl, grp, "regression")),
+            "wape_hist_gbm": _r(w(sl, grp, "hist_gbm")),
             "best_baseline": best, "wape_best_baseline": _r(w(sl, grp, best)),
             "wape_improvement_vs_seasonal_naive_pct": _r((1 - lg / sn) * 100, 1),
             "wape_improvement_vs_best_baseline_pct": _r((1 - lg / w(sl, grp, best)) * 100, 1),
@@ -100,6 +111,20 @@ def build() -> dict:
         "wape_lightgbm": _r(w("chain_level", "all series x week", "lightgbm")),
         "wape_seasonal_naive": _r(w("chain_level", "all series x week", "seasonal_naive")),
         "wape_regression": _r(w("chain_level", "all series x week", "regression")),
+    }
+    best = json.loads(results("best_params.json").read_text(encoding="utf-8"))
+    full = ablation.iloc[0]["wape"]
+    modelling = {
+        "tuning_trials": int(len(trials)),
+        "tuning_cv_folds": best["cv_folds"],
+        "best_params": best["params"],
+        "best_cv_wape": _r(best["cv_wape"]),
+        "worst_cv_wape": _r(trials["cv_wape"].max()),
+        "boosting_rounds": best["rounds"],
+        "lightgbm_vs_hist_gbm_wape": [_r(w("overall", "all", "lightgbm")),
+                                      _r(w("overall", "all", "hist_gbm"))],
+        "ablation_wape_increase": {
+            r.variant.replace("without ", ""): _r(r.wape - full) for r in ablation.iloc[1:].itertuples()},
     }
     shap = pd.read_csv(results("forecast_shap_importance.csv"))
     forecast["top_shap_features"] = shap.iloc[:5, 0].tolist()
@@ -138,23 +163,8 @@ def build() -> dict:
             k: _r(v * 100, 1) for k, v in dip.groupby("pack")["coef_pct"].median().items()},
     }
 
-    ex = opt[opt["series"] == "Coke | 2L"].iloc[0]
-    optimisation = {
-        "example_series": ex["series"],
-        "regular_price": _r(ex["regular_price"], 2),
-        "unit_cost": _r(ex["unit_cost"], 2),
-        "elasticity": _r(ex["elasticity"], 2),
-        "optimal_price": _r(ex["optimal_price"], 2),
-        "price_change_pct": _r(ex["price_change_pct"] * 100, 1),
-        "volume_change_pct": _r(ex["volume_change_pct"] * 100, 1),
-        "margin_uplift_pct": _r(ex["margin_uplift_pct"] * 100, 1),
-        "optimal_price_range_from_elasticity_ci": [_r(ex["optimal_price_range_low"], 2),
-                                                   _r(ex["optimal_price_range_high"], 2)],
-        "assumptions": "constant elasticity, competitors do not react, unit cost fixed, "
-                       "+/-20% price bounds",
-    }
-    summary = {"data": data, "elasticity": elasticity, "forecast": forecast, "promo": promo,
-               "price_optimisation": optimisation}
+    summary = {"data": data, "modelling": modelling, "elasticity": elasticity,
+               "forecast": forecast, "promo": promo}
     results("summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
 

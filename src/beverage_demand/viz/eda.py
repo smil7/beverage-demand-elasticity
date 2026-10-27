@@ -6,7 +6,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from beverage_demand.config import processed, settings
+from beverage_demand.config import settings
+from beverage_demand.db import table
 from beverage_demand.features.panel import PROMO_LABELS
 from beverage_demand.ingest.calendar import HOLIDAYS
 from beverage_demand.viz import plots
@@ -14,11 +15,11 @@ from beverage_demand.viz.plots import plt
 
 
 def load() -> dict[str, pd.DataFrame]:
+    """Tables needed by the EDA charts, read from the warehouse."""
     return {
-        "brand_week": pd.read_parquet(processed("fact_brand_week")),
-        "fact": pd.read_parquet(processed("fact_sales_weekly")),
-        "cal": pd.read_parquet(processed("dim_calendar")),
-        "panel": pd.read_parquet(processed("model_panel")),
+        "brand_week": table("fact_brand_week"),
+        "cal": table("dim_calendar"),
+        "panel": table("model_panel"),
     }
 
 

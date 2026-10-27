@@ -1,36 +1,38 @@
-.PHONY: download data features elasticity forecast promo scenario powerbi summary notebooks test lint all
+.PHONY: download warehouse quality features elasticity tune forecast ablation promo summary notebooks test lint all
 
 RUN = uv run
 
-download:            ## fetch Dominick's soft-drink files into data/raw (see data/README.md)
+download:     ## fetch the Dominick's soft-drink files into data/raw (see data/README.md)
 	$(RUN) python scripts/download_data.py
 
-data: download       ## PySpark ingestion + SQL views -> Parquet, data-quality report
-	$(RUN) python -m beverage_demand.ingest.spark_pipeline
-	$(RUN) python -m beverage_demand.ingest.quality
+warehouse:    ## raw CSV -> DuckDB staging -> star schema (data/warehouse.duckdb)
+	$(RUN) bev warehouse
 
-features:            ## modelling panel (regular price, discount, promo types, competitor prices)
-	$(RUN) python -m beverage_demand.features.panel
+quality:      ## SQL data-quality checks -> results/data_quality_report.md
+	$(RUN) bev quality
 
-elasticity:          ## Phase 3: own/cross elasticities, robustness, heatmap
+features:     ## modelling panel built in SQL (sql/features/model_panel.sql)
+	$(RUN) bev features
+
+elasticity:   ## log-log price elasticity models
 	$(RUN) bev elasticity
 
-forecast:            ## Phase 4: rolling-origin backtest, baselines, SHAP
+tune:         ## LightGBM hyperparameter search with time-series CV
+	$(RUN) bev tune
+
+forecast:     ## rolling-origin backtest: LightGBM, HistGradientBoosting, 3 baselines, SHAP
 	$(RUN) bev forecast
 
-promo:               ## Phase 5: promo lift, ROI ranking (needs forecast)
+ablation:     ## feature-group ablation study
+	$(RUN) bev ablation
+
+promo:        ## promotion lift and ROI (SQL on the forecast outputs)
 	$(RUN) bev promo
 
-scenario:            ## Phase 6: price optimisation + example scenario
-	$(RUN) bev scenario
-
-powerbi:             ## Phase 7: star-schema export to powerbi/export
-	$(RUN) bev powerbi
-
-summary:             ## results/summary.json (README numbers)
+summary:      ## results/summary.json
 	$(RUN) bev summary
 
-notebooks:           ## re-execute the narrative notebooks in place
+notebooks:    ## re-execute the notebooks in place
 	$(RUN) jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb
 
 test:
@@ -39,4 +41,4 @@ test:
 lint:
 	$(RUN) ruff check src tests scripts
 
-all: data features elasticity forecast promo scenario powerbi summary notebooks
+all: warehouse quality features elasticity tune forecast ablation promo summary notebooks

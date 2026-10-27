@@ -14,6 +14,8 @@ NB_DIR = Path(__file__).resolve().parents[1] / "notebooks"
 SETUP = """import pandas as pd
 from IPython.display import Image, Markdown, display
 from beverage_demand.config import results, figure
+from beverage_demand.db import connect
+con = connect(read_only=True)  # the DuckDB warehouse: data/warehouse.duckdb
 pd.set_option("display.precision", 3)
 pd.set_option("display.width", 160)"""
 
@@ -40,6 +42,49 @@ All charts are produced by `beverage_demand.viz.eda`; this notebook adds the com
 Each chart has a **So what** line written for a non-technical commercial audience.
 """),
         code(SETUP + "\nfrom beverage_demand.viz import eda\nd = eda.load()"),
+        md("""
+## 0. What is in the warehouse
+
+Everything lives in one DuckDB database built by `sql/warehouse/*.sql`. A few queries to get a
+feel for the data before any modelling.
+"""),
+        code('''con.sql("""
+SELECT table_name, estimated_size AS rows
+FROM duckdb_tables()
+WHERE table_name IN ('stg_movement', 'fact_sales_weekly', 'fact_brand_week',
+                     'dim_product', 'dim_store', 'dim_calendar', 'model_panel')
+ORDER BY estimated_size DESC
+""").df()'''),
+        code('''# top brand x pack combinations by revenue, and how much of their volume sells on promotion
+con.sql("""
+SELECT brand, pack,
+       ROUND(SUM(dollars) / 1e6, 1)                                   AS revenue_musd,
+       SUM(units)                                                     AS units,
+       ROUND(SUM(units_sale_b + units_sale_s + units_sale_c + units_sale_g)
+             / SUM(units), 3)                                         AS share_units_with_sale_code
+FROM fact_sales_weekly
+WHERE brand <> 'Other'
+GROUP BY brand, pack
+ORDER BY revenue_musd DESC
+LIMIT 12
+""").df()'''),
+        code('''# year-over-year revenue growth per brand with a window function
+con.sql("""
+WITH yearly AS (
+    SELECT f.brand, c.year, SUM(f.dollars) AS revenue
+    FROM fact_sales_weekly f JOIN dim_calendar c USING (week)
+    WHERE c.year BETWEEN 1990 AND 1996 AND f.brand IN ('Coke', 'Pepsi', 'Private Label')
+    GROUP BY f.brand, c.year
+)
+SELECT brand, year, ROUND(revenue / 1e6, 2) AS revenue_musd,
+       ROUND(revenue / LAG(revenue) OVER (PARTITION BY brand ORDER BY year) - 1, 3) AS yoy_growth
+FROM yearly ORDER BY brand, year
+""").df()'''),
+        md("""
+**So what:** Coke and Pepsi in 24-packs and 2-litres are the money makers, and for them the
+majority of units carry a sale code -- before even looking at prices, the data say this is a
+promotion-driven category.
+"""),
         md("## 1. Volume trend by brand"),
         code('share = eda.volume_trend(d["brand_week"])\nshare.head(10)'),
         fig("eda_volume_trend.png"),
@@ -136,12 +181,30 @@ Target: weekly units at brand x pack x store, 1-8 weeks ahead. Rolling-origin ba
 Planned price and promotion for the target week are treated as known in advance.
 """),
         code(SETUP),
+        md("""
+## 1. Tuning LightGBM with time-series cross-validation
+
+8 settings from a small grid, each scored on 3 time-based folds that lie *before* the backtest
+period (`beverage_demand.forecasting.tuning`). Every trial is stored in the `tuning_trials` table.
+"""),
+        code('con.sql("SELECT * EXCLUDE (tuned_at) FROM tuning_trials ORDER BY cv_wape").df().round(4)'),
+        md("""
+Deeper trees (127 leaves) and a Tweedie power of 1.7 work best: weekly volumes are spiky
+(huge promotion weeks, many small weeks), and a higher Tweedie power treats large values as
+naturally more variable.
+
+## 2. Backtest: two ML models vs. three baselines
+
+Accuracy is computed in SQL from the `forecast_predictions` table
+(`sql/analysis/forecast_accuracy.sql`).
+"""),
         code('m = pd.read_csv(results("forecast_metrics.csv"))\n'
-             'm[m["slice"].isin(["overall", "promo"])].pivot_table(index=["slice", "group"], columns="model", values="wape").round(3)'),
+             'm[m["slice"].isin(["overall", "promo", "chain_level"])].pivot_table(index=["slice", "group"], columns="model", values="wape").round(3)'),
         fig("forecast_wape_promo_split.png"),
         md("""
-**So what:** LightGBM has the lowest error overall and in promotion weeks. Naive baselines are
-useless here because volume swings 4-16x between promoted and normal weeks; the log-log regression
+**So what:** LightGBM has the lowest error overall and in promotion weeks, ahead of the second
+tree model (HistGradientBoosting) and the regression. Naive baselines are
+useless here because volume swings roughly 5-15x between promoted and normal weeks; the log-log regression
 is a solid baseline in normal weeks but loses accuracy in promo weeks, where LightGBM's
 interactions between discount depth, promo type and recent sales help most.
 """),
@@ -149,7 +212,20 @@ interactions between discount depth, promo type and recent sales help most.
         fig("forecast_wape_by_series.png"),
         fig("forecast_actual_vs_forecast.png"),
         fig("forecast_wape_by_horizon.png"),
-        md("## What drives the forecast"),
+        md("""
+## 3. Feature ablation -- which inputs matter?
+
+The tuned LightGBM is re-trained on the same folds with one group of features removed at a time.
+"""),
+        code('pd.read_csv(results("ablation.csv")).round(4)'),
+        fig("forecast_ablation.png"),
+        md("""
+**So what:** Removing the price & promotion features hurts by far the most -- without knowing the
+promotion plan, the forecast cannot see the spikes coming. Sales history is the second most
+important group. Dropping the calendar/holiday features does not hurt (it is even marginally
+better): last year's same-week sales and the promotion plan already carry that information.
+"""),
+        md("## 4. What drives the forecast (SHAP)"),
         code('pd.read_csv(results("forecast_shap_importance.csv")).head(12)'),
         fig("forecast_shap_summary.png"),
         md("""
@@ -197,10 +273,10 @@ switching, not new category demand.
     ],
     "05_scenarios.ipynb": [
         md("""
-# 05 -- Scenario planning and price optimisation
+# 05 -- Scenario planning
 
-Built on the Phase 3 elasticities (`beverage_demand.scenario`). Assumptions: constant elasticity,
-no competitor price reaction, fixed unit cost. Use as directional guidance, not a forecast.
+A small what-if tool built on the elasticity models (`beverage_demand.scenario`). Assumptions:
+constant elasticity, no competitor price reaction, fixed unit cost -- directional, not a forecast.
 """),
         code(SETUP + "\nfrom beverage_demand.cli import format_scenario\nfrom beverage_demand.scenario.simulate import simulate"),
         md('## "If we drop Coke 2L by 10% for 4 weeks, what happens?"'),
@@ -211,17 +287,6 @@ margin rises much less because every unit now earns less. Roughly 2-3% of the vo
 Diet Pepsi, 7Up and private label 2L moves to Coke.
 """),
         code('print(format_scenario(simulate("Pepsi", "24pk can", -15, promo_type="S", weeks=2)))'),
-        md("## Margin-maximising regular price"),
-        code('pd.read_csv(results("price_optimization.csv"))[["series", "elasticity", "regular_price", "unit_cost", "current_margin_pct", "optimal_price", "price_change_pct", "margin_uplift_pct", "at_bound"]]'),
-        fig("price_optimization_curve.png"),
-        md("""
-**So what:** With constant elasticity the best price follows the textbook rule
-`price = cost x e / (1 + e)`. For Coke 2L that points to a lower regular price than today, but this
-should be read with care: the elasticities are measured mostly from short temporary promotions,
-which overstate how shoppers would react to a *permanent* price change (stock-piling), and
-competitors would likely respond. The value of this tool is ranking options and sizing trade-offs,
-not setting the shelf price on its own.
-"""),
     ],
 }
 

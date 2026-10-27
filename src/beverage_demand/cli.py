@@ -1,7 +1,8 @@
 """Command-line entry points.
 
-    uv run bev <step>        # data | elasticity | forecast | promo | scenario | powerbi | summary | all
-    uv run scenario --brand "Coke" --pack 2L --price-change -10 --weeks 4 [--promo S] [--stores 2 5 8]
+    uv run bev <step>     # warehouse | quality | features | elasticity | tune | forecast | ablation
+                          # | promo | summary | all
+    uv run scenario --brand "Coke" --pack 2L --price-change -10 --weeks 4 [--promo S]
 """
 
 from __future__ import annotations
@@ -12,12 +13,21 @@ import sys
 import pandas as pd
 
 
-def step_data() -> None:
-    from beverage_demand.features import panel
-    from beverage_demand.ingest import quality, spark_pipeline
+def step_warehouse() -> None:
+    from beverage_demand.ingest import warehouse
 
-    spark_pipeline.run()
+    warehouse.run()
+
+
+def step_quality() -> None:
+    from beverage_demand.ingest import quality
+
     quality.run()
+
+
+def step_features() -> None:
+    from beverage_demand.features import panel
+
     panel.run()
 
 
@@ -27,6 +37,12 @@ def step_elasticity() -> None:
     run.run()
 
 
+def step_tune() -> None:
+    from beverage_demand.forecasting import tuning
+
+    tuning.run()
+
+
 def step_forecast() -> None:
     from beverage_demand.forecasting import backtest, report
 
@@ -34,23 +50,16 @@ def step_forecast() -> None:
     report.run()
 
 
+def step_ablation() -> None:
+    from beverage_demand.forecasting import ablation
+
+    ablation.run()
+
+
 def step_promo() -> None:
     from beverage_demand.promo import analysis
 
     analysis.run()
-
-
-def step_scenario() -> None:
-    from beverage_demand.scenario import optimize
-
-    optimize.run()
-    print(format_scenario(_simulate("Coke", "2L", -10, None, 4, None)))
-
-
-def step_powerbi() -> None:
-    from beverage_demand import powerbi_export
-
-    powerbi_export.run()
 
 
 def step_summary() -> None:
@@ -61,12 +70,14 @@ def step_summary() -> None:
 
 
 STEPS = {
-    "data": step_data,
+    "warehouse": step_warehouse,
+    "quality": step_quality,
+    "features": step_features,
     "elasticity": step_elasticity,
+    "tune": step_tune,
     "forecast": step_forecast,
+    "ablation": step_ablation,
     "promo": step_promo,
-    "scenario": step_scenario,
-    "powerbi": step_powerbi,
     "summary": step_summary,
 }
 
@@ -80,13 +91,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n=== {s} ===")
         STEPS[s]()
     return 0
-
-
-def _simulate(brand, pack, pct, promo, weeks, stores):
-    from beverage_demand.scenario.simulate import simulate
-
-    return simulate(brand, pack, pct, promo_type=promo, weeks=weeks,
-                    stores=tuple(stores) if stores else None)
 
 
 def format_scenario(df: pd.DataFrame) -> str:
@@ -111,6 +115,8 @@ def format_scenario(df: pd.DataFrame) -> str:
 
 
 def scenario_main(argv: list[str] | None = None) -> int:
+    from beverage_demand.scenario.simulate import simulate
+
     ap = argparse.ArgumentParser(prog="scenario", description="What-if price/promo scenario")
     ap.add_argument("--brand", required=True, help='e.g. "Coke", "Diet Pepsi", "Private Label"')
     ap.add_argument("--pack", required=True, help='"2L" or "24pk can"')
@@ -121,7 +127,8 @@ def scenario_main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stores", type=int, nargs="*", default=None, help="store numbers (default all)")
     a = ap.parse_args(argv)
     try:
-        df = _simulate(a.brand, a.pack, a.price_change, a.promo, a.weeks, a.stores)
+        df = simulate(a.brand, a.pack, a.price_change, promo_type=a.promo, weeks=a.weeks,
+                      stores=tuple(a.stores) if a.stores else None)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

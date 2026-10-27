@@ -47,10 +47,26 @@ data/raw/
 | `OK` | 0 = suspect data | rows with `OK = 0` are dropped |
 | `WEEK` | week 1 = 1989-09-14 (Thu) ... week 400 = 1997-05-08 | calendar dimension |
 
-Rows with `OK = 0`, `PRICE <= 0` or `MOVE < 0` are dropped (see `sql/01_movement_clean.sql`).
+Rows with `OK = 0`, `PRICE <= 0` or `MOVE < 0` are dropped (see `sql/warehouse/03_movement_clean.sql`).
 
-## Processed outputs (generated, also git-ignored)
+## The warehouse (generated, also git-ignored)
 
-`make data` writes Parquet tables to `data/processed/`: `dim_product`, `dim_store`, `dim_calendar`,
-`fact_sales_weekly` (brand x pack x store x week), `fact_brand_week` (chain level) and
-`model_panel` (in-scope series with price/promo features).
+`uv run bev warehouse` loads everything into one DuckDB database, `data/warehouse.duckdb`
+(about 400 MB):
+
+| Layer | Tables / views | Built by |
+|---|---|---|
+| Staging | `stg_movement` (raw CSV, typed) | `sql/warehouse/02_staging.sql` |
+| Cleaning | `movement_clean` (view) | `sql/warehouse/03_movement_clean.sql` |
+| Star schema | `dim_product`, `dim_store`, `dim_calendar`, `fact_sales_weekly`, `fact_brand_week` | `sql/warehouse/01_schema.sql`, `04_*`, `05_*` |
+| Features | `model_panel` | `sql/features/model_panel.sql` |
+| Model outputs | `tuning_trials`, `forecast_predictions`, `promo_counterfactual`, `promo_events`, `elasticities`, `ablation_results`, `experiment_runs`, ... | Python models + `sql/analysis/*.sql` |
+| Ops | `etl_run_log` (row counts per load) | `beverage_demand.ingest.warehouse` |
+
+Explore it with the DuckDB CLI or Python:
+
+```python
+import duckdb
+con = duckdb.connect("data/warehouse.duckdb", read_only=True)
+con.sql("SELECT brand, SUM(dollars) FROM fact_sales_weekly GROUP BY brand ORDER BY 2 DESC").show()
+```

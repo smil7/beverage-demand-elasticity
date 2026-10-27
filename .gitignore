@@ -1,7 +1,6 @@
 # Data: Dominick's data is for academic research use only -- never commit it
 data/*
 !data/README.md
-powerbi/export/
 *.parquet
 *.zip
 
@@ -12,8 +11,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .ipynb_checkpoints/
-spark-warehouse/
-metastore_db/
-derby.log
 *.egg-info/
 .DS_Store

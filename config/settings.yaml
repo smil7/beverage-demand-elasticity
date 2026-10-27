@@ -1,10 +1,10 @@
 # Central configuration. Paths are relative to the repository root.
 paths:
   raw_dir: data/raw
-  processed_dir: data/processed
+  processed_dir: data/processed     # model files and other non-table artifacts
+  warehouse: data/warehouse.duckdb   # the DuckDB database: every table lives here
   results_dir: results
   figures_dir: results/figures
-  powerbi_export_dir: powerbi/export
 
 raw_files:
   movement: wsdr.csv
@@ -44,13 +44,13 @@ forecast:
   lags: [1, 2, 4, 8]
   seasonal_lag: 52
   rolling_windows: [4, 13]
-  # rolling-origin backtest: forecast origins (last observed week); each fold forecasts the next `horizon` weeks
+  # rolling-origin backtest: forecast origins (last observed week); each fold forecasts the next
+  # `horizon` weeks. Tuning uses 3 earlier folds (origins 303, 311, 319) -- see forecasting/tuning.py
   first_origin: 327
   n_folds: 9
   fold_step: 8
   seed: 42
 
 scenario:
-  price_bounds_pct: 0.20
   n_sims: 2000
   grid_pct: [-20, -15, -10, -5, 0, 5, 10, 15, 20]

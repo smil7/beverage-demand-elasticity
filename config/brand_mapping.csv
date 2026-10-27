@@ -1,0 +1,23 @@
+priority,pattern,brand,notes
+5,WORLD CLASSIC|WRLD CLASSIC,Other,"World Classics" cola is a separate value brand -- must be caught before the Coke "CLASSIC" rule
+10,(DIET|DT|D/|SUGAR.?FREE|S/F).*(DR\.? ?PEPPER|DR\.? ?PEP)|(DR\.? ?PEPPER|DR\.? ?PEP).*(DIET|DT|SUGAR.?FREE|S/F),Diet Dr Pepper,diet variants are checked before the regular brand
+20,DR\.? ?PEPPER|DR\.? ?PEP,Dr Pepper,
+30,CHERRY COKE|CHERRY COCA|CHRY COKE,Other,flavoured Coke is a separate sub-brand
+40,COKE II|COKE 2,Other,Coke II (reformulated New Coke) is a distinct product
+50,(DIET|DT|D/).*(COKE|COCA)|(COKE|COCA).*(DIET|DT)|CAFFEINE FREE DIET C|CAFF\.? ?FREE DIET C|C\.?F\.? DIET C,Diet Coke,includes caffeine-free Diet Coke
+60,COKE|COCA.?COLA|CLASSIC CO|FREE CLASSI,Coke,Coca-Cola Classic incl. caffeine-free Classic
+70,CRYSTAL,Other,Crystal Pepsi / Crystal Diet Pepsi are distinct clear-cola products
+75,WILD CHERRY|CHERRY PEPSI,Other,flavoured Pepsi
+80,(DIET|DT|D/).*PEPSI|PEPSI.*(DIET|DT),Diet Pepsi,includes caffeine-free Diet Pepsi
+90,PEPSI,Pepsi,includes caffeine-free Pepsi
+95,CHERRY.*(7.?UP|SEVEN)|(7.?UP|SEVEN).*CHERRY|CHRY 7,Other,cherry 7Up (regular and diet) is a flavour extension
+100,(DIET|DT).*(7.?UP|SEVEN.?UP)|(7.?UP|SEVEN.?UP).*(DIET|DT),Diet 7Up,
+120,7.?UP|SEVEN.?UP|SEVEN/UP,7Up,
+130,SPRITE,Sprite,includes Diet Sprite (small volume)
+140,(DIET|DT).*(MOUNTAIN|MTN|MT\.?) DEW|(MOUNTAIN|MTN|MT\.?) DEW.*(DIET|DT),Other,
+150,MOUNTAIN DEW|MTN DEW|MT\.? DEW,Mountain Dew,
+160,DIET RITE COLA|^DIET RITE$,Diet Rite,Diet Rite cola only; Diet Rite flavours go to Other
+170,DIET R\.?C,Other,
+175,ROYAL CROWN|R\.?C\.? COLA|^RC ,RC Cola,
+180,^DOM[ '/]|^DOMINICK|^DOMINCK|^DOMS ,Private Label,Dominick's own-label products
+190,.*,Other,catch-all

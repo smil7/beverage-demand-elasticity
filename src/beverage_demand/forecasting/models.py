@@ -1,14 +1,8 @@
 """Model definitions and training helpers for the demand forecast.
 
-Two machine-learning models are compared:
-
-* **LightGBM** (main model) -- gradient-boosted trees, Tweedie loss, tuned with time-series CV
-  (``forecasting.tuning``).
-* **HistGradientBoosting** (scikit-learn) -- a second tree-boosting implementation with a Poisson
-  loss, used as a comparison model with fixed, sensible settings.
-
-Both use monotone constraints: predicted volume may not go *up* when our own price goes up, or
-*down* when the discount gets deeper. This keeps the price response sensible, which matters
+The model is **LightGBM** (gradient-boosted trees, Tweedie loss), tuned with time-series CV in
+``forecasting.tuning``. It uses monotone constraints: predicted volume may not go *up* when our own
+price goes up, or *down* when the discount gets deeper. This keeps the price response sensible, which matters
 because the promotion analysis asks the model "what if there had been no promotion?".
 """
 
@@ -18,7 +12,6 @@ import json
 
 import lightgbm as lgb
 import pandas as pd
-from sklearn.ensemble import HistGradientBoostingRegressor
 
 from beverage_demand.config import results
 from beverage_demand.features.panel import PROMO_TYPES
@@ -63,26 +56,11 @@ def train_lgb(train: pd.DataFrame, features: list[str], params: dict, rounds: in
                      callbacks=[lgb.early_stopping(50, verbose=False)])
 
 
-def train_hgb(train: pd.DataFrame, features: list[str], seed: int) -> HistGradientBoostingRegressor:
-    model = HistGradientBoostingRegressor(
-        loss="poisson",
-        learning_rate=0.1,
-        max_iter=300,
-        max_leaf_nodes=63,
-        min_samples_leaf=200,
-        categorical_features=[features.index(c) for c in CATEGORICAL],
-        monotonic_cst=[MONOTONE.get(f, 0) for f in features],
-        early_stopping=False,
-        random_state=seed,
-    )
-    return model.fit(train[features], train["units"])
-
-
 def load_tuned_lgb(features: list[str], seed: int) -> tuple[dict, int]:
     """Best LightGBM settings from ``results/best_params.json`` (written by tuning.py)."""
     path = results("best_params.json")
     if not path.exists():
-        raise FileNotFoundError("Run `uv run bev tune` first to choose the LightGBM settings")
+        raise FileNotFoundError("Run `python -m beverage_demand.forecasting.tuning` first")
     best = json.loads(path.read_text(encoding="utf-8"))
     return lgb_params(features, seed, best["params"]), int(best["rounds"])
 

@@ -1,8 +1,7 @@
 # Central configuration. Paths are relative to the repository root.
 paths:
   raw_dir: data/raw
-  processed_dir: data/processed     # model files and other non-table artifacts
-  warehouse: data/warehouse.duckdb   # the DuckDB database: every table lives here
+  processed_dir: data/processed     # cleaned data, model panel, predictions (git-ignored)
   results_dir: results
   figures_dir: results/figures
 

@@ -1,16 +1,15 @@
 import pandas as pd
 import pytest
 
-from beverage_demand.db import run_sql_file
-from beverage_demand.ingest.calendar import build_dim_calendar
-from beverage_demand.ingest.product import (
+from beverage_demand.data.calendar import build_dim_calendar
+from beverage_demand.data.load import aggregate_weekly, clean_movement
+from beverage_demand.data.products import (
     build_dim_product,
     load_brand_rules,
     map_brand,
     pack_category,
     parse_size,
 )
-from beverage_demand.ingest.quality import run_checks
 
 RULES = load_brand_rules()
 
@@ -69,50 +68,22 @@ def test_calendar_matches_codebook():
     assert cal["is_holiday"].sum() > 60
 
 
-def test_warehouse_sql_applies_codebook_rules(tmp_path):
-    """Staging -> movement_clean -> fact_sales_weekly on a 5-row CSV."""
-    from sqlutil import db_with_fact
-
-    csv = tmp_path / "wsdr.csv"
-    lines = [
-        "STORE,UPC,WEEK,MOVE,QTY,PRICE,SALE,PROFIT,OK,PRICE_HEX,PROFIT_HEX",
-        "1,1,1,6,3,2.97,B,25,1,x,x",    # bundle: 3 for $2.97 -> unit price 0.99
-        "1,1,2,4,1,1.50,,20,1,x,x",
-        "1,1,3,5,1,1.50,,20,0,x,x",     # OK = 0 -> dropped
-        "1,1,4,0,1,0,,0,1,x,x",         # PRICE = 0 (not stocked) -> dropped
-        "1,1,5,2,1,1.60,S,999,1,x,x",   # implausible margin -> cost unknown
-    ]
-    csv.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    con = db_with_fact([])
-    con.execute("DROP VIEW movement_clean")
-    con.execute("DROP TABLE stg_movement")
-    run_sql_file(con, "warehouse/02_staging.sql", movement_csv=csv.as_posix())
-    run_sql_file(con, "warehouse/03_movement_clean.sql")
-    run_sql_file(con, "warehouse/04_fact_sales_weekly.sql")
-    f = con.execute("SELECT * FROM fact_sales_weekly ORDER BY week").df().set_index("week")
-    assert list(f.index) == [1, 2, 5]
+def test_cleaning_and_weekly_aggregation_follow_the_codebook():
+    raw = pd.DataFrame({
+        "STORE": [1, 1, 1, 1, 1], "UPC": [10, 10, 10, 10, 10], "WEEK": [1, 2, 3, 4, 5],
+        "MOVE": [6, 4, 5, 0, 2], "QTY": [3, 1, 1, 1, 1],
+        "PRICE": [2.97, 1.50, 1.50, 0.0, 1.60],     # week 1: 3 for $2.97 -> unit price 0.99
+        "SALE": ["B", "", "", "", "S"],
+        "PROFIT": [25.0, 20.0, 20.0, 0.0, 999.0],   # week 5: impossible margin -> cost unknown
+        "OK": [1, 1, 0, 1, 1],                      # week 3: flagged as suspect -> dropped
+    })
+    clean = clean_movement(raw)
+    assert list(clean["week"]) == [1, 2, 5]  # OK = 0 and PRICE = 0 rows are gone
+    products = pd.DataFrame({"upc": [10], "brand": ["Coke"], "pack": ["2L"], "oz_per_unit": [67.6]})
+    f = aggregate_weekly(clean, products).set_index("week")
     assert f.loc[1, "unit_price"] == pytest.approx(0.99)
     assert f.loc[1, "dollars"] == pytest.approx(2.97 * 6 / 3)
     assert f.loc[1, "cogs"] == pytest.approx(2.97 * 6 / 3 * 0.75)
     assert f.loc[1, "units_sale_b"] == 6 and f.loc[2, "any_sale_b"] == 0
+    assert f.loc[5, "any_sale_s"] == 1
     assert pd.isna(f.loc[5, "cogs"])
-
-
-def test_primary_key_rejects_duplicates():
-    import duckdb
-    from sqlutil import db_with_fact, fact_rows
-
-    con = db_with_fact(fact_rows(1, "Coke", "2L", [1], [2.0]))
-    with pytest.raises(duckdb.ConstraintException):
-        con.execute("INSERT INTO fact_sales_weekly SELECT * FROM fact_sales_weekly")
-
-
-def test_quality_checks_pass_and_warn():
-    from sqlutil import db_with_fact, fact_rows
-
-    rows = fact_rows(1, "Coke", "2L", [1, 2], [2.0, 30.0]) + fact_rows(3, "Coke", "2L", [1], [2.0])
-    con = db_with_fact(rows)
-    checks = run_checks(con).set_index("check_name")
-    assert checks.loc["No negative volumes", "status"] == "PASS"
-    assert checks.loc["Unit price sane (<= $25 per pack)", "status"] == "WARN"  # the $30 row
-    assert checks.loc["Every store is in dim_store", "failing_rows"] == 1      # store 3

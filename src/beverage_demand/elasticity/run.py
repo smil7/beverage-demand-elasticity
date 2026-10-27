@@ -16,7 +16,6 @@ import pandas as pd
 import statsmodels.api as sm
 
 from beverage_demand.config import results, settings
-from beverage_demand.db import connect, write_table
 from beverage_demand.elasticity.model import (
     FOURIER_COLS,
     HOLIDAY_COLS,
@@ -225,11 +224,7 @@ def run() -> dict:
     rob = rob.join(pooled)
     rob = rob.join(tiers.pivot(index="series", columns="tier", values="elasticity").add_prefix("tier_"))
     rob.reset_index().to_csv(results("elasticity_robustness.csv"), index=False)
-    with connect() as con:  # model outputs also go back into the warehouse
-        for name, df in [("elasticity_coefficients", coefs), ("elasticities", own),
-                         ("cross_elasticities", cross), ("promo_effects", promo),
-                         ("elasticity_robustness", rob.reset_index())]:
-            write_table(con, name, df)
+
 
     plot_own(own)
     plot_cross(cross, brands)

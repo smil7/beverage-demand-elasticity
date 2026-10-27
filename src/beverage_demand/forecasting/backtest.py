@@ -1,38 +1,32 @@
-"""Rolling-origin backtest: two ML models vs. three baselines (no random splits).
+"""Rolling-origin backtest: tuned LightGBM vs. three baselines (no random splits).
 
-For each fold with origin ``T`` every model is trained on target weeks ``<= T`` and forecasts weeks
+For each fold with origin ``T`` the models are trained on weeks ``<= T`` and forecast weeks
 ``T+1 .. T+H``, each week at its true horizon ``h = t - T``.
 
-Models
-------
-* ``lightgbm``       -- main model, settings from ``tuning.py`` (``results/best_params.json``)
-* ``hist_gbm``       -- scikit-learn HistGradientBoosting, comparison model
+* ``lightgbm``       -- settings chosen by ``tuning.py`` (``results/best_params.json``)
 * ``regression``     -- the log-log elasticity model, re-fitted on each fold's training window
 * ``seasonal_naive`` -- same week last year (4-week mean if missing)
 * ``moving_avg_4``   -- mean of the last 4 weeks before the origin
 
-All forecasts are written to the ``forecast_predictions`` table; accuracy is computed in SQL
-(``sql/analysis/forecast_accuracy.sql``). Each run is also appended to ``experiment_runs``.
-The LightGBM fold models additionally produce the promotion counterfactual (``promo_counterfactual``).
+The LightGBM fold models also produce the promotion counterfactual used in ``promo/analysis.py``:
+the same week predicted with the promotion switched off and price set back to regular.
 """
 
 from __future__ import annotations
 
-import json
 import time
 
 import numpy as np
 import pandas as pd
 
 from beverage_demand.config import processed, results, settings
-from beverage_demand.db import connect, query_file, write_table
 from beverage_demand.elasticity.model import estimation_sample, fit_series
 from beverage_demand.features.panel import load_panel
 from beverage_demand.forecasting.features import build_supervised, feature_columns
-from beverage_demand.forecasting.models import counterfactual, load_tuned_lgb, train_hgb, train_lgb
+from beverage_demand.forecasting.metrics import score
+from beverage_demand.forecasting.models import counterfactual, load_tuned_lgb, train_lgb
 
-MODELS = ["lightgbm", "hist_gbm", "regression", "seasonal_naive", "moving_avg_4"]
-BASELINES = ["regression", "seasonal_naive", "moving_avg_4"]
+MODELS = ["lightgbm", "regression", "seasonal_naive", "moving_avg_4"]
 
 
 def regression_forecast(panel: pd.DataFrame, origin: int, horizon: int, brands: list[str]) -> pd.DataFrame:
@@ -54,33 +48,7 @@ def load_supervised(cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     return panel, sup[(sup["data_gap"] == 0) & sup["units"].notna()].reset_index(drop=True)
 
 
-def backtest_origins(fc: dict) -> list[int]:
-    return [fc["first_origin"] + i * fc["fold_step"] for i in range(fc["n_folds"])]
-
-
-def accuracy_tables(con) -> pd.DataFrame:
-    """All accuracy slices, computed in SQL on ``forecast_predictions``."""
-    con.execute("""
-        CREATE OR REPLACE VIEW forecast_chain_level AS
-        SELECT series, week, model, SUM(units) AS units, SUM(forecast) AS forecast
-        FROM forecast_predictions GROUP BY series, week, model""")
-    slices = [("overall", "'all'", "forecast_predictions"),
-              ("promo", "segment", "forecast_predictions"),
-              ("series", "series", "forecast_predictions"),
-              ("horizon", "h", "forecast_predictions"),
-              ("series_promo", "series || ' / ' || segment", "forecast_predictions"),
-              ("chain_level", "'all series x week'", "forecast_chain_level")]
-    out = []
-    for name, group_by, source in slices:
-        t = query_file(con, "analysis/forecast_accuracy.sql", group_by=group_by, source=source)
-        t = t.rename(columns={t.columns[0]: "group"}).assign(slice=name)
-        out.append(t)
-    m = pd.concat(out, ignore_index=True)
-    m["group"] = m["group"].astype(str)
-    return m[["slice", "group", "model", "n", "wape", "mape", "bias", "rmse"]]
-
-
-def run() -> dict:
+def run() -> None:
     cfg = settings()
     fc = cfg["forecast"]
     brands, H = cfg["scope"]["brands"], fc["horizon"]
@@ -91,17 +59,16 @@ def run() -> dict:
     panel, sup = load_supervised(cfg)
     print(f"Supervised frame: {len(sup):,} rows x {len(features)} features; LightGBM rounds {rounds}")
 
-    preds, cf_rows, last = [], [], None
-    for i, T in enumerate(backtest_origins(fc)):
+    origins = [fc["first_origin"] + i * fc["fold_step"] for i in range(fc["n_folds"])]
+    preds, cf_rows = [], []
+    for i, T in enumerate(origins):
         tf = time.time()
         train = sup[sup["week"] <= T]
-        lgbm = train_lgb(train, features, params, rounds)
-        hgb = train_hgb(train, features, fc["seed"])
+        model = train_lgb(train, features, params, rounds)
 
         test = sup[(sup["origin_week"] == T) & (sup["week"] > T) & (sup["week"] <= T + H)].copy()
         test["fold"] = i
-        test["lightgbm"] = lgbm.predict(test[features])
-        test["hist_gbm"] = hgb.predict(test[features])
+        test["lightgbm"] = model.predict(test[features])
         test["moving_avg_4"] = test["rmean_4"]
         test["seasonal_naive"] = test["lag_52"].fillna(test["rmean_4"])
         test = test.merge(regression_forecast(panel, T, H, brands), on=["series", "store", "week"],
@@ -112,43 +79,37 @@ def run() -> dict:
         # promo counterfactual: same weeks, 1 week ahead, with and without the promotion
         now = sup[(sup["h"] == 1) & (sup["week"] > T) & (sup["week"] <= T + H)].copy()
         now["fold"] = i
-        now["pred_actual"] = lgbm.predict(now[features])
-        now["pred_baseline"] = lgbm.predict(counterfactual(now)[features])
+        now["pred_actual"] = model.predict(now[features])
+        now["pred_baseline"] = model.predict(counterfactual(now)[features])
         cf_rows.append(now)
-        last = (lgbm, test)
-        w = {m: np.abs(test.units - test[m]).sum() / test.units.sum() for m in ("lightgbm", "hist_gbm")}
-        print(f"  fold {i}: origin {T}, train rows {len(train):,}, WAPE lightgbm {w['lightgbm']:.3f} "
-              f"hist_gbm {w['hist_gbm']:.3f} ({time.time() - tf:.0f}s)")
+        print(f"  fold {i}: origin {T}, train rows {len(train):,}, "
+              f"WAPE lightgbm {np.abs(test.units - test.lightgbm).sum() / test.units.sum():.3f} "
+              f"({time.time() - tf:.0f}s)")
 
     pred = pd.concat(preds, ignore_index=True)
-    pred["segment"] = np.where(pred["promo"] == 1, "promo weeks", "non-promo weeks")
-    long = pred.melt(id_vars=["series", "brand", "pack", "store", "week", "h", "fold", "promo",
-                              "promo_type", "segment", "units"],
-                     value_vars=MODELS, var_name="model", value_name="forecast")
-    cf = pd.concat(cf_rows, ignore_index=True)[
-        ["series", "brand", "pack", "store", "week", "fold", "units", "promo", "promo_type",
-         "discount", "unit_price", "reg_price", "unit_cost", "pred_actual", "pred_baseline"]]
+    pred[["series", "brand", "pack", "store", "week", "h", "fold", "units", "promo", "promo_type",
+          "discount", *MODELS]].to_parquet(processed("backtest_predictions"), index=False)
+    cf = pd.concat(cf_rows, ignore_index=True)
+    cf[["series", "brand", "pack", "store", "week", "fold", "units", "promo", "promo_type",
+        "discount", "unit_price", "reg_price", "unit_cost", "pred_actual", "pred_baseline"]].to_parquet(
+        processed("promo_counterfactual"), index=False)
+    model.save_model(str(processed("lightgbm_last_fold").with_suffix(".txt")))
+    test[features].sample(min(5000, len(test)), random_state=0).to_parquet(
+        processed("shap_sample"), index=False)
 
-    lgbm, test = last
-    lgbm.save_model(str(processed("lightgbm_last_fold").with_suffix(".txt")))
-    with connect() as con:
-        write_table(con, "forecast_predictions", long)
-        write_table(con, "promo_counterfactual", cf)
-        write_table(con, "shap_sample", test[features].sample(min(5000, len(test)), random_state=0))
-        metrics = accuracy_tables(con)
-        overall = metrics[metrics["slice"].isin(["overall", "promo"])]
-        con.execute("""CREATE TABLE IF NOT EXISTS experiment_runs (
-            run_at TIMESTAMP, experiment VARCHAR, model VARCHAR, params VARCHAR,
-            wape_overall DOUBLE, wape_promo DOUBLE, wape_non_promo DOUBLE)""")
-        for m in MODELS:
-            o = overall[overall["model"] == m].set_index("group")["wape"]
-            con.execute("INSERT INTO experiment_runs VALUES (now(), 'backtest', ?, ?, ?, ?, ?)",
-                        [m, json.dumps({k: v for k, v in params.items() if k != "monotone_constraints"})
-                         if m == "lightgbm" else "", o["all"], o["promo weeks"], o["non-promo weeks"]])
+    pred["segment"] = np.where(pred["promo"] == 1, "promo weeks", "non-promo weeks")
+    chain = pred.groupby(["series", "week"], as_index=False)[["units", *MODELS]].sum()
+    metrics = pd.concat([
+        score(pred, MODELS).assign(slice="overall", group="all"),
+        score(pred, MODELS, by=["segment"]).rename(columns={"segment": "group"}).assign(slice="promo"),
+        score(pred, MODELS, by=["series"]).rename(columns={"series": "group"}).assign(slice="series"),
+        score(pred, MODELS, by=["h"]).rename(columns={"h": "group"}).assign(slice="horizon"),
+        score(chain, MODELS).assign(slice="chain_level", group="all series x week"),
+    ], ignore_index=True)
+    metrics = metrics[["slice", "group", "model", "n", "wape", "mape", "bias", "rmse"]]
     metrics.to_csv(results("forecast_metrics.csv"), index=False)
     print(metrics[metrics["slice"].isin(["overall", "promo", "chain_level"])].to_string(index=False))
     print(f"Backtest finished in {time.time() - t0:.0f}s")
-    return {"rounds": rounds}
 
 
 if __name__ == "__main__":

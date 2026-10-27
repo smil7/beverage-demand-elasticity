@@ -13,8 +13,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from beverage_demand.data.calendar import build_dim_calendar
 from beverage_demand.features.panel import PROMO_TYPES, brand_col
-from beverage_demand.ingest.calendar import build_dim_calendar
 
 TRUE_OWN = -2.0
 TRUE_CROSS = 0.5

@@ -10,19 +10,13 @@ dependencies = [
     "pyarrow>=15",
     "pyyaml>=6",
     "statsmodels>=0.14",
-    "scikit-learn>=1.4",
     "lightgbm>=4.3",
     "shap>=0.45",
     "scipy>=1.12",
     "matplotlib>=3.8",
-    "duckdb>=1.0",
     "requests>=2.31",
     "tabulate>=0.10.0",
 ]
-
-[project.scripts]
-scenario = "beverage_demand.cli:scenario_main"
-bev = "beverage_demand.cli:main"
 
 [dependency-groups]
 dev = [

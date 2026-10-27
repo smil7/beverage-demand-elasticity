@@ -18,21 +18,21 @@ stock-up purchase, so shoppers wait for the deal.
 **2. This category runs on promotions.**
 79-94% of all units of these brands are sold on some kind of deal; core brands are on promotion in
 43-66% of store-weeks, at an average discount of 20-26%. During a promotion a 24-pack sells about
-15 times its normal volume, a 2-litre about 5 times.
+20 times its normal volume, a 2-litre about 5 times.
 
 **3. On average, promotions do not pay for themselves -- but moderate ones do.**
-Across 39,000 promoted store-weeks, the extra margin from extra units covered only 88 cents of
-every dollar of discount given away (a margin loss of about $2.3M on $19.6M of discount over 72
+Across 39,000 promoted store-weeks, the extra margin from extra units covered only 90 cents of
+every dollar of discount given away (a margin loss of about $2.0M on $19.6M of discount over 72
 weeks). The depth of the discount decides it:
 
 | Discount depth | Return per $1 of discount (24-pack / 2-litre) |
 |---|---|
-| 10-20% off | **$1.30 / $1.32 -- pays back** |
-| 20-30% off | $0.89 / $1.22 |
-| 30%+ off | **$0.72 / $0.81 -- loses money** |
+| 10-20% off | **$1.31 / $1.39 -- pays back** |
+| 20-30% off | $0.91 / $1.26 |
+| 30%+ off | **$0.72 / $0.83 -- loses money** |
 
 Yet two-thirds of all discount money went to 30%+ deals. Price cuts without in-store promotion
-support (no sale tag / bonus-buy) were the weakest of all: about 50 cents back per dollar.
+support (no sale tag / bonus-buy) were the weakest of all: about 60 cents back per dollar.
 
 **4. Our promotions take volume from competitors -- and vice versa.**
 When one brand cuts price, shoppers switch: e.g. a 10% cut on Coke 2-litre pulls about 2-3% of the
@@ -55,11 +55,11 @@ model. The single biggest driver of next week's volume is the planned discount.
 3. **Share the promotion calendar with demand planning.** Forecasts that know the plan are 37%
    more accurate in promotion weeks -- fewer out-of-stocks on deal, less excess stock afterwards.
 4. **Plan the summer around July 4th, Labor Day and Memorial Day** -- the category's three biggest
-   weeks (+27% to +37% above an average week) -- and use the scenario tool to size each event.
+   weeks (+27% to +37% above an average week) -- and size each event with the forecast model.
 
 ## Expected impact
 
-In the 72-week period analysed, promotions with 30%+ discounts cost about $3.2M more in margin
+In the 72-week period analysed, promotions with 30%+ discounts cost about $3.1M more in margin
 than they generated (24-pack and 2-litre combined), on about $13M of discount. Had that money
 earned what the 10-20% deals earned (about $1.30 back per $1), it would have added margin instead
 of losing it. How much of that is real depends on how much volume shallower deals keep, which is

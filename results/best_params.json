@@ -2,10 +2,10 @@
   "params": {
     "tweedie_variance_power": 1.7,
     "num_leaves": 127,
-    "min_data_in_leaf": 200
+    "min_data_in_leaf": 50
   },
-  "rounds": 93,
-  "cv_wape": 0.4689487356631445,
+  "rounds": 300,
+  "cv_wape": 0.46450626024205705,
   "cv_folds": [
     303,
     311,

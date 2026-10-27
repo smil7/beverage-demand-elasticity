@@ -1,184 +1,97 @@
 # Beverage Demand Forecasting & Promotion Analytics
 
 [![ci](https://github.com/smil7/beverage-demand-elasticity/actions/workflows/ci.yml/badge.svg)](https://github.com/smil7/beverage-demand-elasticity/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.12-blue) ![DuckDB](https://img.shields.io/badge/database-DuckDB-yellow) ![LightGBM](https://img.shields.io/badge/model-LightGBM-green)
+![Python](https://img.shields.io/badge/python-3.12-blue) ![LightGBM](https://img.shields.io/badge/model-LightGBM-green)
 
-I took 17.7 million rows of real supermarket scanner data (soft drinks, 93 Chicago stores,
-1989-1997), built a **SQL data warehouse** for it, and **trained and evaluated forecasting models**
-that predict weekly demand per product and store -- then used them to answer business questions:
-how price-sensitive shoppers are, and which promotions actually pay back.
+Using 17.7 million rows of real supermarket scanner data (soft drinks, 93 Chicago stores,
+1989-1997), I built a model that forecasts weekly demand per product and store, measured how
+price-sensitive shoppers are, and worked out which promotions actually pay back.
 
 ![Model comparison](results/figures/forecast_wape_promo_split.png)
 
-## What this project shows
+## Questions
 
-**1. Databases & SQL**
-- A DuckDB warehouse with layers: raw staging (17.7M rows) -> cleaning view -> **star schema**
-  with primary keys -> feature table -> model-output tables (`sql/`).
-- **Feature engineering written in SQL**: window functions (`LAG`, rolling `MAX`,
-  `LAST_VALUE ... IGNORE NULLS` forward-fill), `PIVOT`, and a gaps-and-islands query for promotion
-  events. I verified the SQL against an independent pandas implementation: all 381,397 rows match.
-- **Data-quality checks as SQL** that block bad loads; they caught 9 missing weeks, 7 stores with no
-  demographics and 1.2% of rows with impossible margins.
-- Model outputs (predictions, tuning trials, experiment runs) go **back into the database**, and
-  accuracy and promotion ROI are computed with SQL queries.
-- SQL is **unit-tested** on small in-memory databases in CI.
-
-**2. Model training & evaluation**
-- **Time-series cross-validation** for hyperparameter tuning (8 LightGBM settings x 3 folds, every
-  trial logged), on weeks *before* the test period.
-- A **9-fold rolling-origin backtest** (no random splits, leakage-tested features) comparing
-  **5 models**: tuned LightGBM, scikit-learn HistGradientBoosting, a log-log regression and two
-  naive baselines -- split by promotion vs. normal weeks.
-- A **feature ablation** study and **SHAP** to understand what the model relies on.
-- Econometric **price-elasticity models** (statsmodels OLS, store fixed effects, clustered
-  standard errors).
+1. How accurately can we forecast weekly sales per product and store, 1-8 weeks ahead -- and how
+   much better is a machine-learning model than simple rules?
+2. How much does volume change when the price changes (price elasticity)?
+3. Which promotions bring in more margin than they cost?
 
 ## Results
 
-All numbers are produced by the code into [`results/summary.json`](results/summary.json).
+All numbers come from the code and are saved in [`results/summary.json`](results/summary.json).
 
 | | Result |
 |---|---|
-| Data | 17.7M raw rows -> 10.7M clean -> 2.39M rows in `fact_sales_weekly`; 93 stores, 390 weeks; modelled: 12 products (6 brands x 2-litre / 24-pack), 1,026 store-product series |
-| **Forecast accuracy** (WAPE, store level, 1-8 weeks ahead) | **LightGBM 0.475** - HistGradientBoosting 0.499 - regression 0.580 - seasonal naive 0.908 - moving average 0.976 |
-| | LightGBM has **48% lower error than seasonal naive** and 18% lower than the best baseline (regression); in promotion weeks 0.485 vs 0.766 for seasonal naive (**37% lower**) |
-| Tuning | best setting (Tweedie power 1.7, 127 leaves) CV WAPE 0.469 vs 0.516 for the worst of 8 |
-| Ablation | without price & promotion features WAPE rises to **0.843**; without sales history +0.016; without calendar features -0.002 (no loss) |
-| Price elasticity | all 12 products very price-sensitive: -2.9 to -6.2 (24-packs median -5.6, 2-litre -3.4) |
-| Promotions | promoted weeks sell 6.4x the no-promo baseline, but overall ROI is 0.88; **10-20% discounts pay back (ROI 1.30-1.32), 30%+ discounts do not (0.72-0.81)** and take 66% of discount spend |
+| Data | 17.7M raw rows -> 10.7M after cleaning -> 2.39M weekly rows (brand x pack x store x week); 93 stores, 390 weeks. Modelled: 12 products (Coke, Diet Coke, Pepsi, Diet Pepsi, 7Up, store brand x 2-litre / 24-pack), 1,026 store-product series |
+| **Forecast** (WAPE = error as a share of volume, lower is better) | **LightGBM 0.473** vs. log-log regression 0.580, seasonal naive 0.908, 4-week average 0.976 |
+| | **48% lower error than seasonal naive**, 18% lower than the best baseline; in promotion weeks 0.483 vs. 0.766 for seasonal naive |
+| Tuning | 8 LightGBM settings x 3 time-based folds; best CV WAPE 0.464 vs. 0.509 for the worst |
+| Price elasticity | all 12 products are very price-sensitive: -2.9 to -6.2 (24-packs more than 2-litres) |
+| Promotions | promoted weeks sell about 7.5x the no-promotion baseline, but on average return only $0.90 of margin per $1 of discount; **10-20% discounts pay back (ROI 1.31-1.39), 30%+ discounts don't (0.72-0.83)** |
 
-## The database
+## How I did it
 
-```mermaid
-flowchart LR
-    A[wsdr.csv<br/>17.7M rows] --> B[stg_movement]
-    B --> C[movement_clean<br/>view: codebook rules]
-    D[UPC / store / calendar<br/>files] --> E[dim_product<br/>dim_store<br/>dim_calendar]
-    C & E --> F[fact_sales_weekly<br/>PK store, brand, pack, week]
-    F --> G[model_panel<br/>features in SQL]
-    G --> H[Python: train models]
-    H --> I[forecast_predictions<br/>promo_counterfactual<br/>tuning_trials]
-    I --> J[SQL: accuracy, promo ROI]
-    F -.-> Q[quality checks]
-```
+**1. Data** ([`data/load.py`](src/beverage_demand/data/load.py)) -- read the raw CSV with pandas,
+apply the cleaning rules from the dataset's codebook (unit price = price / bundle size, drop rows
+flagged as bad or with no price), map 1,746 product descriptions to brands and pack sizes with
+rules in [`config/brand_mapping.csv`](config/brand_mapping.csv), and add up sales per brand, pack,
+store and week.
 
-| Folder | What |
-|---|---|
-| [`sql/warehouse/`](sql/warehouse) | schema with keys, staging, cleaning view, fact tables |
-| [`sql/features/model_panel.sql`](sql/features/model_panel.sql) | the feature table, step by step with window functions |
-| [`sql/quality/checks.sql`](sql/quality/checks.sql) | data-quality rules -> [`results/data_quality_report.md`](results/data_quality_report.md) |
-| [`sql/analysis/`](sql/analysis) | forecast accuracy by model/segment, promotion events (gaps and islands) and ROI |
+**2. Features** ([`features/panel.py`](src/beverage_demand/features/panel.py)) -- regular (shelf)
+price as the highest price of the last 13 weeks, discount depth, promotion type, competitor
+prices, holidays and seasonality.
 
-A taste of the feature SQL -- the regular (shelf) price is the highest price of the last 13 weeks,
-looking only backwards so the future cannot leak in:
+**3. Forecasting** ([`forecasting/`](src/beverage_demand/forecasting)) -- one LightGBM model for all
+products and stores, forecasting 1-8 weeks ahead:
+- **No leakage:** sales features (lags, rolling averages) only use weeks before the forecast is
+  made; a unit test checks this exactly. The planned price/promotion of the target week is used,
+  since promotions are planned weeks ahead.
+- **Time-based validation only:** tuning on 3 folds before the test period, then a 9-fold
+  rolling backtest on weeks 328-399 (each fold trains on the past, forecasts the next 8 weeks).
+- **Baselines:** same week last year, 4-week average, and a log-log regression.
+- **Explainability:** SHAP shows discount depth is the biggest driver, then recent sales level and price.
 
-```sql
-SELECT *,
-    MAX(unit_price) OVER (
-        PARTITION BY store, brand, pack ORDER BY week
-        ROWS BETWEEN 12 PRECEDING AND CURRENT ROW) AS reg_price
-FROM p2_price
-```
+**4. Price elasticity** ([`elasticity/`](src/beverage_demand/elasticity)) -- a log-log regression
+per product (the coefficient on log price is the elasticity), with store effects, promotion,
+holiday and seasonality controls, and standard errors clustered by store.
 
-## The models
+**5. Promotions** ([`promo/analysis.py`](src/beverage_demand/promo/analysis.py)) -- for each
+promoted week, the forecast model predicts what would have sold *without* the promotion. Lift =
+actual - baseline; ROI = extra margin from the lift / money given away in discounts.
 
-**Validation design**
+Notebooks walk through each step: [`01_eda`](notebooks/01_eda.ipynb),
+[`02_elasticity`](notebooks/02_elasticity.ipynb), [`03_forecasting`](notebooks/03_forecasting.ipynb),
+[`04_promo`](notebooks/04_promo.ipynb). More detail in [`docs/methodology.md`](docs/methodology.md).
 
-```
-weeks 1 ............ 303  311  319 | 327  335  ...  391  399
-      train ->        [ tuning folds ] [ 9 backtest folds, 8 weeks each ]
-```
+## Main findings
 
-Each fold trains on everything before its origin week and forecasts the next 8 weeks. Tuning only
-sees weeks up to 327, so the reported accuracy is on weeks the tuning never looked at.
-
-| Model | Overall WAPE | Promo weeks | Non-promo weeks |
-|---|---|---|---|
-| **LightGBM** (tuned, Tweedie loss, monotone price constraints) | **0.475** | **0.485** | **0.405** |
-| HistGradientBoosting (scikit-learn, Poisson loss) | 0.499 | 0.510 | 0.418 |
-| Log-log regression (refit per fold) | 0.580 | 0.598 | 0.449 |
-| Seasonal naive (same week last year) | 0.908 | 0.766 | 1.975 |
-| 4-week moving average | 0.976 | 0.742 | 2.737 |
-
-Both tree models beat every baseline; LightGBM is best overall but HistGradientBoosting won 2 of the
-9 folds, so the difference between the two is small. Naive methods fail because volume jumps roughly 5-15x
-in promotion weeks.
-
-| Tuning trials (time-series CV) | Feature ablation |
-|---|---|
-| [`results/tuning_trials.csv`](results/tuning_trials.csv) | ![](results/figures/forecast_ablation.png) |
-
-More: [`notebooks/03_forecasting.ipynb`](notebooks/03_forecasting.ipynb), SHAP summary
-([`forecast_shap_summary.png`](results/figures/forecast_shap_summary.png)).
-
-## Business findings
-
-- **Shoppers are very price-sensitive**, especially on 24-packs: a 10% price cut lifts a 24-pack's
-  volume by roughly 63-92%, a 2-litre's by 36-53% ([elasticities](results/elasticities.csv),
-  [notebook](notebooks/02_elasticity.ipynb)).
-- **Promotions move huge volume but on average lose margin** (ROI 0.88). Moderate 10-20% discounts
-  pay back; 30%+ discounts don't, yet get two-thirds of the discount budget. Price cuts without a
-  sale tag are the weakest (ROI 0.44-0.54) ([ranking](results/promo_ranking.md),
-  [notebook](notebooks/04_promo.ipynb)).
-- A short write-up for a sales audience: [`reports/executive_summary.md`](reports/executive_summary.md).
-- A what-if CLI built on the elasticities:
-
-```bash
-uv run scenario --brand "Coke" --pack 2L --price-change -10 --weeks 4
-```
+- **Promotions drive this category:** 79-94% of units of the main products sell on some kind of
+  deal, and the planned discount is the single most important forecast input.
+- **The ML model clearly beats simple rules,** most of all in promotion weeks, where volume jumps
+  roughly 5-20x.
+- **Moderate discounts pay back, deep ones don't.** 30%+ discounts lose margin yet take two-thirds
+  of the discount budget. A short write-up for a non-technical audience:
+  [`reports/executive_summary.md`](reports/executive_summary.md).
 
 ## How to run
 
-Requires Python 3.11-3.12 and [uv](https://docs.astral.sh/uv/). No database server needed.
-
 ```bash
-uv sync                                    # install from uv.lock
+uv sync                                    # install dependencies
 uv run python scripts/download_data.py     # raw files -> data/raw (see data/README.md)
-uv run bev warehouse                       # build data/warehouse.duckdb (~10 s)
-uv run bev all                             # quality, features, elasticity, tune, forecast, ablation, promo, summary
-uv run pytest                              # tests (synthetic data + in-memory DuckDB; also in CI)
+uv run python scripts/run_all.py           # whole analysis
+uv run pytest                              # tests
 ```
 
-Or `make <step>` with the same step names. The full run takes about an hour on a laptop, mostly the
-tuning, the 9-fold backtest of five models, and the ablation.
-
 **Data licence:** Dominick's data are provided by the James M. Kilts Center for Marketing,
-University of Chicago Booth School of Business, for academic research. No raw or processed data are
-committed; `results/` contains only aggregated outputs.
+University of Chicago Booth School of Business, for academic research. The data are not included
+in this repository; `results/` holds only aggregated outputs.
 
 ## Limitations
 
-- One retailer, 1990s data -- the methods transfer, the numbers would need re-estimating.
-- The retailer chooses when to discount, so the elasticities are probably upper bounds.
-- Promotion ROI uses the retailer's category margin; store traffic and basket effects are not included.
-- HistGradientBoosting used fixed settings while LightGBM was tuned.
-
-Details: [`docs/methodology.md`](docs/methodology.md). Likely interview questions:
-[`docs/interview_prep.md`](docs/interview_prep.md).
+- One retailer and 1990s data; the method transfers, the numbers would need re-estimating.
+- The retailer chooses when to discount, so the elasticities are probably on the high side.
+- Promotion ROI uses the retailer's margin only; extra store traffic from deals is not counted.
 
 ## Tech stack
 
-**SQL / DuckDB** (window functions, CTEs, PIVOT, constraints) · **Python** · pandas ·
-**LightGBM** · scikit-learn · statsmodels · SHAP · matplotlib · pytest · ruff · uv · GitHub Actions
-
-## Repository layout
-
-```
-sql/
-  warehouse/      schema (PKs), staging, cleaning view, fact tables
-  features/       model_panel.sql -- all model features in SQL
-  quality/        data-quality checks
-  analysis/       forecast accuracy, promotion events and ROI
-src/beverage_demand/
-  db.py           DuckDB connection + SQL runner
-  ingest/         warehouse build, product/calendar/store dimensions, quality report
-  features/       builds the SQL panel
-  forecasting/    features, models, tuning (time-series CV), backtest, ablation, SHAP charts
-  elasticity/     log-log price elasticity models
-  promo/          promotion lift and ROI (on top of the SQL)
-  scenario/       what-if simulator
-notebooks/        01_eda (incl. SQL queries) ... 05_scenarios
-results/          summary.json, CSV outputs, figures
-tests/            SQL tests on in-memory DuckDB, leakage tests, elasticity recovery on synthetic data
-```
+Python, pandas, LightGBM, statsmodels, SHAP, matplotlib, pytest

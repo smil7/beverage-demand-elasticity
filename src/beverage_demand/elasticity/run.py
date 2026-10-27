@@ -114,19 +114,19 @@ def pooled_model(est: pd.DataFrame) -> pd.Series:
     """Robustness (a): one model for all series; own price interacted with series, shared controls."""
     d = est
     series = sorted(d["series"].unique())
-    X = pd.DataFrame(index=d.index)
+    cols: dict[str, pd.Series] = {}
     for s in series:
-        X[f"lnp|{s}"] = d["ln_price"] * (d["series"] == s)
+        cols[f"lnp|{s}"] = d["ln_price"] * (d["series"] == s)
     for s in series[1:]:
-        X[f"fe|{s}"] = (d["series"] == s).astype(float)
+        cols[f"fe|{s}"] = (d["series"] == s).astype(float)
     for c in ["promo_b", "promo_s", "promo_u", *POST_COLS, *HOLIDAY_COLS, *FOURIER_COLS]:
-        X[c] = d[c].astype(float)
+        cols[c] = d[c].astype(float)
     for y in sorted(d["year"].unique())[1:]:
-        X[f"y{y}"] = (d["year"] == y).astype(float)
+        cols[f"y{y}"] = (d["year"] == y).astype(float)
     for st in sorted(d["store"].unique())[1:]:
-        X[f"s{st}"] = (d["store"] == st).astype(float)
-    X["const"] = 1.0
-    X = X.astype(np.float32)
+        cols[f"s{st}"] = (d["store"] == st).astype(float)
+    cols["const"] = pd.Series(1.0, index=d.index)
+    X = pd.DataFrame(cols, index=d.index).astype(np.float32)
     res = sm.OLS(np.log(d["units"].to_numpy(float)), X).fit(
         cov_type="cluster", cov_kwds={"groups": d["store"].to_numpy()}
     )

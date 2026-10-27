@@ -1,0 +1,158 @@
+{
+  "data": {
+    "raw_movement_rows": 17730501,
+    "clean_movement_rows": 10741743,
+    "fact_rows_brand_pack_store_week": 2394149,
+    "stores": 93,
+    "weeks_with_data": 390,
+    "first_week_start": "1989-09-14",
+    "last_week_end": "1997-05-07",
+    "modelled_series_brand_pack": 12,
+    "modelled_store_series": 1026,
+    "model_panel_rows": 381397
+  },
+  "elasticity": {
+    "own_price_elasticity_min": -6.21,
+    "own_price_elasticity_max": -2.91,
+    "own_price_elasticity_median": -4.33,
+    "most_elastic_series": "Pepsi | 24pk can",
+    "least_elastic_series": "7Up | 2L",
+    "median_elasticity_24pk_can": -5.58,
+    "median_elasticity_2L": -3.41,
+    "all_own_elasticities_negative": true,
+    "cross_pairs_identified": 45,
+    "cross_pairs_not_identified_lockstep_pricing": 15,
+    "cross_share_positive": 0.8,
+    "cross_share_positive_and_significant": 0.689,
+    "pooled_vs_per_series_correlation": 0.965,
+    "max_abs_tier_deviation": 0.4
+  },
+  "forecast": {
+    "backtest_folds": 9,
+    "horizon_weeks": 8,
+    "test_weeks": "328-399",
+    "overall": {
+      "wape_lightgbm": 0.4752,
+      "wape_seasonal_naive": 0.9083,
+      "wape_moving_avg_4": 0.9764,
+      "wape_regression": 0.5804,
+      "best_baseline": "regression",
+      "wape_best_baseline": 0.5804,
+      "wape_improvement_vs_seasonal_naive_pct": 47.7,
+      "wape_improvement_vs_best_baseline_pct": 18.1,
+      "mape_lightgbm": 1.0704,
+      "mape_seasonal_naive": 3.5697,
+      "mape_improvement_vs_seasonal_naive_pct": 70.0,
+      "bias_lightgbm": -0.0884,
+      "test_rows": 67199
+    },
+    "promo_weeks": {
+      "wape_lightgbm": 0.4852,
+      "wape_seasonal_naive": 0.7664,
+      "wape_moving_avg_4": 0.7421,
+      "wape_regression": 0.5978,
+      "best_baseline": "regression",
+      "wape_best_baseline": 0.5978,
+      "wape_improvement_vs_seasonal_naive_pct": 36.7,
+      "wape_improvement_vs_best_baseline_pct": 18.8,
+      "mape_lightgbm": 1.3897,
+      "mape_seasonal_naive": 1.7895,
+      "mape_improvement_vs_seasonal_naive_pct": 22.3,
+      "bias_lightgbm": -0.0908,
+      "test_rows": 39378
+    },
+    "non_promo_weeks": {
+      "wape_lightgbm": 0.3997,
+      "wape_seasonal_naive": 1.9747,
+      "wape_moving_avg_4": 2.737,
+      "wape_regression": 0.4493,
+      "best_baseline": "regression",
+      "wape_best_baseline": 0.4493,
+      "wape_improvement_vs_seasonal_naive_pct": 79.8,
+      "wape_improvement_vs_best_baseline_pct": 11.0,
+      "mape_lightgbm": 0.6172,
+      "mape_seasonal_naive": 6.096,
+      "mape_improvement_vs_seasonal_naive_pct": 89.9,
+      "bias_lightgbm": -0.0701,
+      "test_rows": 27821
+    },
+    "chain_level": {
+      "wape_lightgbm": 0.4256,
+      "wape_seasonal_naive": 0.881,
+      "wape_regression": 0.5187
+    },
+    "top_shap_features": [
+      "discount depth",
+      "13-wk avg sales",
+      "own price (log)",
+      "brand x pack",
+      "regular price (log)"
+    ]
+  },
+  "promo": {
+    "promo_store_weeks_analysed": 39378,
+    "promo_events": 15523,
+    "avg_lift_pct": 556.3,
+    "avg_lift_pct_24pk_can": 1552.5,
+    "avg_lift_pct_2L": 379.1,
+    "overall_roi": 0.886,
+    "total_discount_investment_usd": 19556972.0,
+    "total_net_gross_margin_impact_usd": -2228643.0,
+    "promo_types_ranked": 103,
+    "share_promo_types_roi_gt_1": 0.282,
+    "best_promo_type": "Private Label 24pk can - Bonus buy (B), 0-10% off",
+    "best_promo_type_roi": 3.44,
+    "largest_margin_gain_promo_type": "Pepsi 24pk can - Simple price reduction (S), 10-20% off",
+    "largest_margin_gain_roi": 2.02,
+    "largest_margin_gain_usd": 969619.0,
+    "worst_promo_type": "Private Label 24pk can - Unflagged price cut (U), 20-30% off",
+    "worst_promo_type_roi": -2.51,
+    "roi_by_depth": {
+      "24pk can 0-10%": 0.2,
+      "24pk can 10-20%": 1.3,
+      "24pk can 20-30%": 0.9,
+      "24pk can 30%+": 0.72,
+      "2L 0-10%": 1.08,
+      "2L 10-20%": 1.34,
+      "2L 20-30%": 1.23,
+      "2L 30%+": 0.82
+    },
+    "roi_10_20pct_discounts": {
+      "24pk can": 1.3,
+      "2L": 1.34
+    },
+    "roi_30pct_plus_discounts": {
+      "24pk can": 0.72,
+      "2L": 0.82
+    },
+    "share_of_discount_spend_on_30pct_plus": 0.663,
+    "roi_by_type": {
+      "24pk can Bonus buy (B)": 0.86,
+      "24pk can Simple price reduction (S)": 0.94,
+      "24pk can Unflagged price cut (U)": 0.55,
+      "2L Bonus buy (B)": 0.92,
+      "2L Simple price reduction (S)": 0.87,
+      "2L Undocumented code (G)": 0.89,
+      "2L Unflagged price cut (U)": 0.47
+    },
+    "post_promo_dip_week1_median_pct": {
+      "24pk can": -13.8,
+      "2L": -0.7
+    }
+  },
+  "price_optimisation": {
+    "example_series": "Coke | 2L",
+    "regular_price": 1.66,
+    "unit_cost": 0.98,
+    "elasticity": -3.49,
+    "optimal_price": 1.37,
+    "price_change_pct": -17.1,
+    "volume_change_pct": 92.4,
+    "margin_uplift_pct": 11.9,
+    "optimal_price_range_from_elasticity_ci": [
+      1.35,
+      1.4
+    ],
+    "assumptions": "constant elasticity, competitors do not react, unit cost fixed, +/-20% price bounds"
+  }
+}

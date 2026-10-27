@@ -155,7 +155,10 @@ def run() -> dict:
         processed("shap_sample"), index=False)
 
     pred["segment"] = np.where(pred["promo"] == 1, "promo weeks", "non-promo weeks")
+    # chain level: the same forecasts summed over stores (what a brand planner looks at)
+    chain = pred.groupby(["series", "week"], as_index=False)[["units", *MODELS]].sum()
     metrics = pd.concat([
+        score(chain, MODELS).assign(slice="chain_level", group="all series x week"),
         score(pred, MODELS).assign(slice="overall", group="all"),
         score(pred, MODELS, by=["segment"]).rename(columns={"segment": "group"}).assign(slice="promo"),
         score(pred, MODELS, by=["series"]).rename(columns={"series": "group"}).assign(slice="series"),

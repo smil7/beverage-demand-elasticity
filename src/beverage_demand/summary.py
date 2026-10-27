@@ -96,6 +96,11 @@ def build() -> dict:
             "bias_lightgbm": _r(m(sl, grp, "lightgbm", "bias")),
             "test_rows": int(m(sl, grp, "lightgbm", "n")),
         }
+    forecast["chain_level"] = {
+        "wape_lightgbm": _r(w("chain_level", "all series x week", "lightgbm")),
+        "wape_seasonal_naive": _r(w("chain_level", "all series x week", "seasonal_naive")),
+        "wape_regression": _r(w("chain_level", "all series x week", "regression")),
+    }
     shap = pd.read_csv(results("forecast_shap_importance.csv"))
     forecast["top_shap_features"] = shap.iloc[:5, 0].tolist()
 

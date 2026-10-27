@@ -1,0 +1,139 @@
+// =====================================================================================
+// DAX measures for the Beverage Demand & Promotion dashboard
+// Load the files in powerbi/export/ (see powerbi/DASHBOARD_SPEC.md for the model).
+// Create a table called "_Measures" (Enter data -> one empty column) and paste these in.
+// =====================================================================================
+
+// ---------- Sales (fact_sales_weekly) ----------
+Total Units = SUM ( fact_sales_weekly[units] )
+
+Equivalent Cases = SUM ( fact_sales_weekly[eq_cases] )     // 8-oz equivalent cases (192 oz)
+
+Revenue = SUM ( fact_sales_weekly[dollars] )
+
+Gross Margin = SUM ( fact_sales_weekly[gross_margin] )
+
+Gross Margin % = DIVIDE ( [Gross Margin], [Revenue] )
+
+Avg Unit Price = DIVIDE ( [Revenue], [Total Units] )
+
+Promo Share of Units =
+DIVIDE (
+    CALCULATE ( [Total Units], fact_sales_weekly[promo_flag] = 1 ),
+    [Total Units]
+)
+
+// Dominick's weeks are Thu-Wed and not a contiguous date table, so YoY uses the year
+// column / a 52-week shift instead of built-in time intelligence.
+Units PY =
+VAR _yr = MAX ( dim_calendar[year] )
+RETURN
+    CALCULATE ( [Total Units], REMOVEFILTERS ( dim_calendar ), dim_calendar[year] = _yr - 1 )
+
+Units YoY % = DIVIDE ( [Total Units] - [Units PY], [Units PY] )
+
+Revenue PY =
+VAR _yr = MAX ( dim_calendar[year] )
+RETURN
+    CALCULATE ( [Revenue], REMOVEFILTERS ( dim_calendar ), dim_calendar[year] = _yr - 1 )
+
+Revenue YoY % = DIVIDE ( [Revenue] - [Revenue PY], [Revenue PY] )
+
+Units Same Week LY =
+VAR _wk = MAX ( dim_calendar[week] )
+RETURN
+    CALCULATE ( [Total Units], REMOVEFILTERS ( dim_calendar ), dim_calendar[week] = _wk - 52 )
+
+// ---------- Forecast accuracy (fact_forecast) ----------
+// Slice by fact_forecast[model] ("lightgbm", "seasonal_naive", "moving_avg_4", "regression")
+Actual Units (Backtest) = SUM ( fact_forecast[actual_units] )
+
+Forecast Units = SUM ( fact_forecast[forecast_units] )
+
+Forecast WAPE = DIVIDE ( SUM ( fact_forecast[abs_error] ), SUM ( fact_forecast[actual_units] ) )
+
+Forecast Bias % = DIVIDE ( [Forecast Units] - [Actual Units (Backtest)], [Actual Units (Backtest)] )
+
+Forecast Accuracy % = 1 - [Forecast WAPE]
+
+WAPE LightGBM =
+CALCULATE ( [Forecast WAPE], fact_forecast[model] = "lightgbm" )
+
+WAPE Seasonal Naive =
+CALCULATE ( [Forecast WAPE], fact_forecast[model] = "seasonal_naive" )
+
+WAPE Improvement vs Seasonal Naive % = 1 - DIVIDE ( [WAPE LightGBM], [WAPE Seasonal Naive] )
+
+// ---------- Promotions (fact_promo_events) ----------
+Promo Weeks = COUNTROWS ( fact_promo_events )
+
+Promo Events = DISTINCTCOUNT ( fact_promo_events[event_id] )
+
+Promo Actual Units = SUM ( fact_promo_events[units] )
+
+Promo Baseline Units = SUM ( fact_promo_events[baseline_units] )
+
+Promo Lift Units = SUM ( fact_promo_events[lift_units] )
+
+Promo Lift % = DIVIDE ( [Promo Lift Units], [Promo Baseline Units] )
+
+Discount Investment = SUM ( fact_promo_events[discount_investment] )
+
+Incremental Gross Margin = SUM ( fact_promo_events[incremental_gm] )
+
+// ROI > 1 means the promotion increased gross-margin dollars vs. not promoting
+Promo ROI = DIVIDE ( [Incremental Gross Margin], [Discount Investment] )
+
+Net Margin Impact = SUM ( fact_promo_events[net_margin_impact] )
+
+Avg Discount Depth = AVERAGE ( fact_promo_events[discount] )
+
+// ---------- Elasticities ----------
+Own Price Elasticity = AVERAGE ( elasticities[own_elasticity] )
+
+Volume Impact of 10% Price Cut = POWER ( 0.9, [Own Price Elasticity] ) - 1
+
+Cross Elasticity = AVERAGE ( cross_elasticities[cross_elasticity] )
+
+// ---------- Scenario planner (scenario_grid + what-if parameter) ----------
+// Modeling > New parameter > Numeric range: name "Price Change %", -20 to 20, increment 5,
+// default 0. Power BI creates the table 'Price Change %' with column [Price Change %].
+Selected Price Change = SELECTEDVALUE ( 'Price Change %'[Price Change %], 0 )
+
+Scenario Units =
+CALCULATE (
+    SUM ( scenario_grid[units_scenario] ),
+    scenario_grid[price_change_pct] = [Selected Price Change]
+)
+
+Scenario Base Units =
+CALCULATE (
+    SUM ( scenario_grid[units_base] ),
+    scenario_grid[price_change_pct] = [Selected Price Change]
+)
+
+Scenario Volume Change % = DIVIDE ( [Scenario Units] - [Scenario Base Units], [Scenario Base Units] )
+
+Scenario Revenue Change =
+CALCULATE (
+    SUM ( scenario_grid[revenue_scenario] ) - SUM ( scenario_grid[revenue_base] ),
+    scenario_grid[price_change_pct] = [Selected Price Change]
+)
+
+Scenario Gross Margin Change =
+CALCULATE (
+    SUM ( scenario_grid[gm_scenario] ) - SUM ( scenario_grid[gm_base] ),
+    scenario_grid[price_change_pct] = [Selected Price Change]
+)
+
+Scenario GM Low (P5) =
+CALCULATE (
+    SUM ( scenario_grid[gm_p5] ) - SUM ( scenario_grid[gm_base] ),
+    scenario_grid[price_change_pct] = [Selected Price Change]
+)
+
+Scenario GM High (P95) =
+CALCULATE (
+    SUM ( scenario_grid[gm_p95] ) - SUM ( scenario_grid[gm_base] ),
+    scenario_grid[price_change_pct] = [Selected Price Change]
+)

@@ -1,127 +1,140 @@
 # Interview prep -- questions about this project
 
-Short model answers. Numbers refer to `results/summary.json`.
+Short answers in my own words. Numbers come from `results/summary.json`.
 
 ---
 
+## The project
+
 **1. In one minute, what did you build?**
-An end-to-end commercial analytics project on 7.5 years of store-level soft-drink scanner data
-(17.7M rows, 93 stores). PySpark + SQL build a star schema; log-log regressions estimate own- and
-cross-price elasticities for 12 brand-pack SKUs; a global LightGBM forecasts store-level weekly
-demand 1-8 weeks ahead and beats seasonal-naive by 48% WAPE (37% in promo weeks); the forecast
-model's counterfactual gives promotion lift and ROI; and a scenario tool / optimiser turns
-elasticities into "what if we cut price 10%" answers. Outputs feed a Power BI star schema and
-Databricks notebooks.
+I loaded 17.7M rows of weekly supermarket scanner data (soft drinks, 93 stores, 1989-1997) into a
+DuckDB warehouse with SQL: staging, cleaning, a star schema with primary keys, and the whole
+feature table built with window functions. On top of it I trained and compared forecasting models
+(tuned LightGBM, scikit-learn HistGradientBoosting, a log-log regression and two naive baselines)
+with a rolling time-based backtest, ran a feature ablation, estimated price elasticities, and used
+the forecast model to measure which promotions pay back. Results and predictions go back into the
+database and are analysed with SQL.
 
-**2. Why a log-log model?**
-The coefficient on log price is directly the elasticity, retail demand is multiplicative (a
-promotion multiplies sales), and logs tame the skew. It is the industry-standard first model
-because it is interpretable and gives a single number a pricing manager can use.
+**2. Why did you pick this dataset?**
+It is real retail data with prices, promotions and margins -- the same problems a beverage company
+works on (demand, pricing, trade promotions) -- and it is big enough (17.7M rows) that the data
+engineering part is real.
 
-**3. How do you read an elasticity of -3.5?**
-A 1% price increase cuts volume by ~3.5%. For a 10% cut: `0.9^-3.5 - 1` = +45% volume. Below -1,
-revenue rises when price falls; whether margin rises depends on the margin (Lerner rule).
+## Databases and SQL
 
-**4. Why might your elasticity estimates be biased?**
-Endogeneity: prices are chosen by the retailer, often in weeks with high expected demand or with
-manufacturer funding. If the controls miss part of that demand, the price cut gets credit for it
-and the elasticity is too large. Also nearly all price variation is temporary deals, and shoppers
-stock up on deals, so short-run elasticities overstate the response to a permanent price change.
-Both biases push towards over-estimating sensitivity. Fixes: cost-based or Hausman instruments, or
-experiments.
+**3. Why DuckDB and not pandas or PostgreSQL?**
+The work is analytical (big scans, group-bys, window functions), which is what DuckDB is built for:
+it loads the 1.2 GB CSV and builds the fact table in about 10 seconds on a laptop, needs no server,
+and the same SQL file runs in CI tests on an in-memory database. The SQL is standard enough
+(CTEs, window functions, `PRIMARY KEY`, `NOT NULL`) to move to PostgreSQL or Snowflake with small
+changes.
 
-**5. What are clustered standard errors and why use them?**
-Weekly errors within a store are correlated (a store that over-sells this week tends to next week).
-Ordinary SEs assume independence and would be much too small, making everything look significant.
-Clustering by store allows arbitrary correlation within a store over time.
+**4. Walk me through the data model.**
+Staging table `stg_movement` (raw, typed) -> view `movement_clean` (codebook rules: unit price =
+PRICE/QTY, drop OK = 0 and PRICE <= 0) -> star schema: `fact_sales_weekly` at brand x pack x store x
+week with a composite primary key, and dimensions `dim_product` (UPC -> brand, pack),
+`dim_store` (price tier, demographics) and `dim_calendar` (dates, holidays). Then `model_panel`
+for modelling and output tables like `forecast_predictions` and `promo_events`.
 
-**6. Some cross-elasticities were "not identified". What does that mean?**
-Pepsi and Diet Pepsi 2L prices correlate at 0.99 within store -- they are always promoted together.
-A regression can't separate two variables that move together; my first run gave Diet Pepsi 2L an
-own elasticity of -0.75 and Pepsi a cross-elasticity of -3.2, which is collinearity, not economics.
-I drop a price that correlates > 0.9 with another and report the pair as not identified (15 of 60)
-instead of publishing misleading numbers.
+**5. How did you build features in SQL?**
+`sql/features/model_panel.sql`, step by step in temp tables:
+- a complete weekly grid per store x series (join to the calendar between first and last sale),
+- forward-fill missing prices with `LAST_VALUE(... IGNORE NULLS) OVER (... ROWS BETWEEN UNBOUNDED
+  PRECEDING AND CURRENT ROW)`,
+- regular price as a rolling 13-week `MAX() OVER (ROWS BETWEEN 12 PRECEDING AND CURRENT ROW)`,
+- promotion type with `CASE`, post-promotion weeks with `LAG()`,
+- competitor prices with a long table + `PIVOT`.
 
-**7. Why time-based validation instead of a random split?**
-A random split lets the model train on the future (week 380) to predict the past (week 379), and
-lag features leak the answer. A rolling-origin backtest mimics production: train on everything up
-to week T, forecast T+1..T+8, move T forward. I used 9 origins covering weeks 328-399, and chose
-the LightGBM objective on a window *before* the first origin so the test folds were never used
-for tuning.
+**6. How do you know the SQL features are correct?**
+Two ways. I first wrote the same logic in pandas and compared both outputs row by row: all 381,397
+rows matched (differences below 1e-15). Then I wrote unit tests that run the SQL on tiny in-memory
+databases where I know the answer (e.g. a price rise in week 4 must not change the regular price
+of weeks 1-3).
 
-**8. How did you make sure there's no leakage in the features?**
-Every sales-based feature for a target week `t` at horizon `h` uses data up to `t-h` only (lags,
-rolling stats). A unit test builds a series where units = week number and checks every lag equals
-the expected week exactly for h = 1, 3, 8. Price/promo for the target week is used on purpose --
-it is planned in advance -- and documented as an assumption.
+**7. What is "gaps and islands" and where did you use it?**
+Grouping consecutive rows into runs. A promotion "event" is a run of consecutive promoted weeks:
+`week - ROW_NUMBER() OVER (PARTITION BY series, store ORDER BY week)` is constant inside a run, so
+it identifies the event (`sql/analysis/promo_events.sql`).
 
-**9. Isn't using the target week's price leakage?**
-Not in this use case: retailers and bottlers plan price and promotions weeks ahead, and the
-forecast is used to plan supply *given* that promo calendar. It does mean the reported accuracy is
-"forecast given the plan"; if the plan changes, the forecast must be re-run. Without planned promo
-information no model could predict a 15x promo spike.
+**8. What data-quality checks did you run?**
+`sql/quality/checks.sql`: no duplicate keys (also enforced by the primary key), no negative volumes,
+positive prices, every UPC/week/store found in its dimension, margins in a plausible range, week
+coverage. Blocking checks stop the pipeline; others are warnings. They found real issues: 9 weeks
+missing chain-wide, 7 stores with no demographics row, and 1.2% of rows with impossible margins.
 
-**10. Why WAPE rather than MAPE?**
-WAPE = total absolute error / total volume, so errors are weighted by volume -- what matters for
-supply. MAPE averages per-row % errors and explodes on tiny weeks (forecast 5, actual 1 = 400%),
-which dominate intermittent store-level data. I still report MAPE, bias and RMSE.
+**9. How would this change in production?**
+Same layers in a cloud warehouse (Snowflake / Databricks): scheduled loads, the SQL as versioned
+models, data-quality checks as tests that block bad loads, the training job reading `model_panel`
+and writing predictions back to a table. I already log every tuning trial and backtest run to
+tables (`tuning_trials`, `experiment_runs`), which is a small version of experiment tracking.
 
-**11. Why did LightGBM beat the baseline in promo weeks but only modestly otherwise?**
-In normal weeks demand is stable and the constant-elasticity regression describes it well (WAPE
-0.449 vs LightGBM 0.400). In promo weeks the response depends on interactions -- depth x promo type x
-pack x recent sales level x season -- that one elasticity can't capture; trees model them directly
-(0.485 vs 0.598). Naive baselines fail in both because volume swings 4-16x between promo and
-non-promo weeks.
+## Modelling and training
 
-**12. How did you estimate promotion lift?**
-For each promo week in the backtest, the fold's LightGBM model (trained only on earlier data)
-predicts the week as it happened and again with promotion removed and price reset to regular. The
-difference to actual is the lift. Monotone constraints on price and discount keep that
-counterfactual economically sensible. Sanity check: the baselines match actual non-promo volumes
-closely.
+**10. How did you avoid data leakage?**
+- Time-based validation only, never random splits.
+- Every sales-based feature for a target week uses data up to the forecast origin only (lags,
+  rolling means). A unit test builds a series where units = week number and checks every lag for
+  horizons 1, 3 and 8.
+- The regular price uses only past and current weeks (also tested).
+- Hyperparameters were tuned on folds *before* the backtest period.
 
-**13. What did you find about promotions?**
-They move huge volume (24-packs ~16x baseline) but on average don't pay back their discount (ROI
-0.89). Depth is the lever: 10-20% discounts are margin-accretive (ROI 1.30-1.34) while 30%+
-discounts lose money (0.72-0.82) and take about two-thirds of discount spend. Untagged price cuts
-are the worst (ROI about 0.5). Recommendation: shift depth from 30%+ to 10-20%, and always pair cuts
-with merchandising.
+**11. Explain your validation setup.**
+Rolling origin: train on everything up to week T, forecast weeks T+1 to T+8, move T forward 8 weeks,
+repeat 9 times (test weeks 328-399). Tuning used 3 earlier folds (origins 303, 311, 319).
 
-**14. If promotions lose money, why does the retailer run them?**
-My ROI is category gross margin only. It ignores store traffic and basket size (soft drinks are a
-classic loss leader), manufacturer funding not visible in acquisition cost, and competitive
-positioning. A full trade-spend evaluation would add basket data and the bottler's trade terms.
+**12. How did you tune LightGBM?**
+A small grid (Tweedie power, number of leaves, minimum rows per leaf), 8 sampled settings, each
+scored by WAPE on the 3 tuning folds with early stopping choosing the number of trees. The best
+setting (Tweedie 1.7, 127 leaves) had CV WAPE 0.469 vs 0.516 for the worst. All trials are in
+`results/tuning_trials.csv`.
 
-**15. How would you handle a new product with no history?**
-The global model helps: brand, pack, price and promo features transfer from similar SKUs. For
-elasticity, borrow from analogous products -- pool with brand/pack-level hierarchical priors
-(Bayesian shrinkage) and update as data arrives. Launch forecasts would rely on attribute-based
-analogues plus planned distribution and promo.
+**13. Why Tweedie loss?**
+Weekly units are non-negative and very skewed: many ordinary weeks and some huge promotion weeks.
+Tweedie (and Poisson) losses are made for that; plain squared error would be dominated by the
+biggest weeks. CV confirmed that a higher Tweedie power was better.
 
-**16. How would you productionize this forecast?**
-Databricks: the PySpark ingest as a scheduled Workflow writing Delta tables; feature build and
-LightGBM training as jobs tracked in MLflow (params, WAPE by fold, model artifact) and registered in
-Unity Catalog; weekly batch scoring for the next 8 weeks with the promo plan as input; monitoring of
-WAPE and bias by brand and promo vs non-promo, with alerts on drift; Power BI on top of the Delta
-tables. My MLOps background (CI/CD, SageMaker, model registry) maps directly.
+**14. Why compare two tree models?**
+To show the result is not a LightGBM accident. HistGradientBoosting is a different implementation
+of the same idea; both clearly beat the baselines (WAPE 0.475 and 0.499 vs 0.580 for the best
+baseline), so most of the gain comes from the features and the approach. LightGBM won overall
+but not in every fold (HistGradientBoosting was better in 2 of 9), and LightGBM was tuned while
+HistGradientBoosting used fixed settings -- so the gap between them is small and partly tuning.
 
-**17. How would you make the elasticities more robust?**
-Hierarchical Bayesian model (store elasticities shrunk to brand-level means), instrumental
-variables for endogeneity, separate short- vs long-run (regular price) elasticities, and
-competitor-reaction models for scenario planning.
+**15. What did the feature ablation tell you?**
+Removing the price and promotion features hurts by far the most (WAPE 0.475 -> 0.843): the model
+cannot predict promotion spikes without the promotion plan. Sales history comes next (+0.016),
+then store demographics (+0.007). Removing the calendar/holiday features made the model very
+slightly *better* (-0.002) -- the same-week-last-year lag and the promotion features already carry
+that information, so those features are candidates to drop. See `results/ablation.csv`.
 
-**18. Your optimiser says lower the Coke 2L regular price by 17%. Would you recommend that?**
-Not on its own. It assumes constant elasticity, no competitor response and fixed cost, and the
-elasticity comes from temporary deals, which overstate the reaction to a permanent change. I'd use
-it to rank options and size the trade-off, then validate with a test-and-control store experiment
-before any shelf-price change.
+**16. Isn't using the price of the forecast week leakage?**
+No, it is planned in advance: retailers and suppliers agree prices and promotions weeks ahead.
+I document it as an assumption -- the forecast is "volume given the promotion plan".
 
-**19. What is cannibalisation and how did you measure it?**
-Volume a promotion takes from other brands rather than adding to the category. I used the
-cross-elasticities: a promotion of depth d on brand k changes competitor j's volume by
-`(1-d)^{b_jk} - 1`. Coke 24-pack promotions take the most -- about 17% of competitors' volume.
+**17. Why WAPE instead of MAPE?**
+WAPE = total absolute error / total actual volume, so big weeks count more -- which matters for
+supply. MAPE explodes on tiny weeks (forecast 5, actual 1 = 400% error). I report both.
 
-**20. What would you do differently with more time?**
-Instrument prices; hierarchical forecasting reconciled store -> chain; a promotion-calendar
-optimiser under a trade budget; MLflow tracking on Databricks; and validate the counterfactual
-lift against a holdout of stores that did not run a given promotion.
+**18. Why monotone constraints?**
+So the model cannot learn "higher price -> more volume" from noise. That matters because I ask the
+model "what if there had been no promotion?" to measure promotion lift.
+
+**19. What is SHAP and what did it show?**
+It splits each prediction into feature contributions. Discount depth is the top driver, then the
+recent 13-week sales level and the price.
+
+## Business results
+
+**20. What is a price elasticity, and what did you find?**
+The % change in volume for a 1% price change. I estimated it with a log-log regression (coefficient
+on log price = elasticity) with store fixed effects and store-clustered standard errors. All 12
+products are very price-sensitive (-2.9 to -6.2); 24-packs more than 2-litre bottles. One caveat:
+the retailer chooses when to discount, so these are probably upper bounds.
+
+**21. Which promotions pay back?**
+Moderate discounts (10-20% off) earn back more margin than they cost (ROI 1.30-1.32); deep 30%+
+discounts do not (0.72-0.81), and they take two-thirds of the discount budget.
+
+**22. What would you do next?**
+Hierarchical forecasts (store -> chain), better handling of the price-endogeneity problem, and
+moving the pipeline to a scheduled cloud job with monitoring of forecast error.

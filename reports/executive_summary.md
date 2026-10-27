@@ -18,18 +18,18 @@ stock-up purchase, so shoppers wait for the deal.
 **2. This category runs on promotions.**
 79-94% of all units of these brands are sold on some kind of deal; core brands are on promotion in
 43-66% of store-weeks, at an average discount of 20-26%. During a promotion a 24-pack sells about
-16 times its normal volume, a 2-litre about 5 times.
+15 times its normal volume, a 2-litre about 5 times.
 
 **3. On average, promotions do not pay for themselves -- but moderate ones do.**
-Across 39,000 promoted store-weeks, the extra margin from extra units covered only 89 cents of
-every dollar of discount given away (a margin loss of about $2.2M on $19.6M of discount over 72
+Across 39,000 promoted store-weeks, the extra margin from extra units covered only 88 cents of
+every dollar of discount given away (a margin loss of about $2.3M on $19.6M of discount over 72
 weeks). The depth of the discount decides it:
 
 | Discount depth | Return per $1 of discount (24-pack / 2-litre) |
 |---|---|
-| 10-20% off | **$1.30 / $1.34 -- pays back** |
-| 20-30% off | $0.90 / $1.23 |
-| 30%+ off | **$0.72 / $0.82 -- loses money** |
+| 10-20% off | **$1.30 / $1.32 -- pays back** |
+| 20-30% off | $0.89 / $1.22 |
+| 30%+ off | **$0.72 / $0.81 -- loses money** |
 
 Yet two-thirds of all discount money went to 30%+ deals. Price cuts without in-store promotion
 support (no sale tag / bonus-buy) were the weakest of all: about 50 cents back per dollar.
@@ -72,8 +72,8 @@ why we recommend a test in a subset of stores before rolling out.
 - The margin view is the **retailer's category gross margin**. It does not count extra store
   traffic or basket spend that soft-drink deals bring, or the bottler's own trade terms.
 - Price sensitivity is measured mostly from **short promotions**; shoppers react less to a
-  permanent price change than to a one-week deal (they stock up on deals). Treat the scenario and
-  optimal-price tools as **directional** -- they also assume competitors do not react.
+  permanent price change than to a one-week deal (they stock up on deals). Treat the what-if
+  scenario tool as **directional** -- it also assumes competitors do not react.
 - Promotion records in this data set are incomplete (the provider warns about it); we added a
   price-based rule to catch unflagged deals.
 

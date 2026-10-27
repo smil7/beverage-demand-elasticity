@@ -18,6 +18,7 @@ dependencies = [
     "pyspark>=3.5",
     "duckdb>=1.0",
     "requests>=2.31",
+    "tabulate>=0.10.0",
 ]
 
 [project.scripts]

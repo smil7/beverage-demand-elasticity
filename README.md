@@ -92,6 +92,22 @@ in this repository; `results/` holds only aggregated outputs.
 - The retailer chooses when to discount, so the elasticities are probably on the high side.
 - Promotion ROI uses the retailer's margin only; extra store traffic from deals is not counted.
 
+## Future improvements
+
+- **Power BI dashboard** -- put the results in front of commercial teams: sales and margin trends,
+  price elasticity by brand, promotion ROI by type and discount depth, and forecast vs. actual,
+  with a what-if page for price changes.
+- **Cloud data platform** -- move the data and the pipeline to a cloud platform (for example Azure
+  with Spark) so it runs on schedule on much larger, current data.
+- **Experiment tracking and model registry** (e.g. MLflow) -- log every training run, its
+  settings and accuracy, and version the deployed model.
+- **Automated retraining and monitoring** -- retrain weekly with the new promotion plan and alert
+  when forecast error or bias drifts.
+- **Better models** -- try more model types, forecast at chain level as well and reconcile it with
+  store-level forecasts, and use hierarchical (Bayesian) elasticities to stabilise noisy products.
+- **Promotion planning** -- choose which weeks and discount depths to promote under a fixed
+  trade budget, using the forecast and ROI results.
+
 ## Tech stack
 
 Python, pandas, LightGBM, statsmodels, SHAP, matplotlib, pytest

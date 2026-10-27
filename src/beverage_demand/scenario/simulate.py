@@ -120,17 +120,3 @@ def _row(series: str, role: str, b: Baseline, mult: np.ndarray, price: float, we
         "gm_change_pct": g / base_gm - 1,
     }
 
-
-def scenario_grid() -> pd.DataFrame:
-    """Pre-computed price-change scenarios for every series (Power BI what-if page)."""
-    cfg = settings()
-    panel = _panel_tail()
-    out = []
-    for series in sorted(panel["series"].unique()):
-        brand, pack = series.split(" | ")
-        for pct in cfg["scenario"]["grid_pct"]:
-            res = simulate(brand, pack, pct, weeks=1, n_sims=500)
-            res.insert(0, "price_change_pct", pct)
-            res.insert(0, "scenario_series", series)
-            out.append(res)
-    return pd.concat(out, ignore_index=True)

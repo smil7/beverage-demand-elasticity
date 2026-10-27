@@ -1,0 +1,56 @@
+# Central configuration. Paths are relative to the repository root.
+paths:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  results_dir: results
+  figures_dir: results/figures
+  powerbi_export_dir: powerbi/export
+
+raw_files:
+  movement: wsdr.csv
+  upc: upcsdr.csv
+  demographics: demo.dta
+
+download:
+  base_url: https://www.chicagobooth.edu/-/media/enterprise/centers/kilts/datasets/dominicks-dataset
+  files:
+    wsdr.zip: /movement_csv-files/wsdr.zip
+    upcsdr.csv: /upc_csv-files/upcsdr.csv
+    demo_stata.zip: https://www.chicagobooth.edu/boothsitecore/docs/dff/store-demos-customer-count/demo_stata.zip
+    dominicks-manual-and-codebook_kiltscenter.pdf: /dominicks-manual-and-codebook_kiltscenter.pdf
+
+calendar:
+  week1_start: "1989-09-14"   # codebook Part 8, week 1 = 09/14/89 - 09/20/89
+
+# Brands and packs whose brand x pack series are modelled (elasticity, forecast, promo, scenario).
+scope:
+  brands: [Coke, Diet Coke, Pepsi, Diet Pepsi, 7Up, Private Label]
+  packs: [2L, 24pk can]
+  # a store x series needs at least this many weeks with positive sales to be modelled
+  min_weeks_per_store_series: 100
+
+promo:
+  # a week counts as a promotion if a SALE code is set OR the price is this far below regular
+  discount_threshold: 0.05
+  regular_price_window: 13       # trailing weeks used for the regular (shelf) price
+  depth_buckets: [0.0, 0.10, 0.20, 0.30, 1.0]
+
+elasticity:
+  fourier_order: 3
+  min_obs: 2000
+
+forecast:
+  horizon: 8
+  lags: [1, 2, 4, 8]
+  seasonal_lag: 52
+  rolling_windows: [4, 13]
+  # rolling-origin backtest: forecast origins (last observed week); each fold forecasts the next `horizon` weeks
+  first_origin: 327
+  n_folds: 9
+  fold_step: 8
+  seed: 42
+
+scenario:
+  price_bounds_pct: 0.20
+  n_sims: 2000
+  grid_pct: [-20, -15, -10, -5, 0, 5, 10, 15, 20]
